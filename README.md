@@ -57,6 +57,20 @@ dotnet publish -c Release -r win-x64 --self-contained false \
 | `StartupManager.cs` | 开机自启（写 `HKCU\...\Run`） |
 | `DiagnosticsLog.cs` | 诊断日志 |
 | `ImeStateProbe.cs` | `--probe` 诊断模式 |
+| `使用说明.md` | **面向使用者**的说明（每次 publish 自动复制到输出目录并改名 `README.md`） |
+
+### 两种发布方式
+
+| 命令 | 产物 | 体积 | 适用 |
+|---|---|---|---|
+| `--self-contained false` | `发布\ImeTip.exe` | ~190 KB | 自己用；对方需装 .NET 10 桌面运行时 |
+| `--self-contained true` | `发布-免安装\ImeTip.exe` | ~72 MB | **发给别人**；对方什么都不用装 |
+
+免安装版加 `-p:EnableCompressionInSingleFile=true` 可显著减小体积。
+（WPF **不支持** `PublishTrimmed` 裁剪，72 MB 已是合理下限。）
+
+发给别人时只需要 `ImeTip.exe` + `README.md` 两个文件，
+`ImeTip.pdb` 是调试符号，可以不带。
 
 ---
 

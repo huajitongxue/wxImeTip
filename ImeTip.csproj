@@ -21,4 +21,16 @@
     <Using Remove="System.Windows.Forms" />
   </ItemGroup>
 
+  <!--
+    每次 publish 后，自动把面向使用者的《使用说明.md》复制到输出目录并改名 README.md。
+
+    为什么要自动化：发布目录会被重新生成，手工放进去的说明文件迟早会丢。
+    这样"发出去的那个文件夹"里永远带着使用说明。
+  -->
+  <Target Name="CopyUserGuideToPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\使用说明.md"
+          DestinationFiles="$(PublishDir)README.md"
+          Condition="Exists('$(MSBuildProjectDirectory)\使用说明.md')" />
+  </Target>
+
 </Project>
