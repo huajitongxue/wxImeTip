@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 托盘图标用的 NotifyIcon 来自 WinForms：WPF 本身没有托盘图标控件 -->
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      打开 UseWindowsForms 后，SDK 会把 System.Drawing / System.Windows.Forms
+      塞进"隐式 using"，而这会跟 WPF 的 System.Windows.Media 打架
+      （典型症状：Color / Brush / Point 变成"不明确的引用"）。
+      这里移除掉，改为只在 TrayIcon.cs 里显式 using。
+    -->
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>

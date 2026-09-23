@@ -1,0 +1,34 @@
+﻿<Window x:Class="ImeTip.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="ImeTip"
+        Width="76" Height="44"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowActivated="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual"
+        MouseLeftButtonDown="OnMouseLeftButtonDown"
+        MouseRightButtonDown="OnMouseRightButtonDown">
+
+    <!-- x:Name="Root" 让我们能在代码里访问它，用来设置鼠标悬停提示（诊断信息） -->
+    <Border x:Name="Root"
+            CornerRadius="10"
+            Background="#E6262628"
+            BorderBrush="#38FFFFFF"
+            BorderThickness="1">
+        <TextBlock x:Name="StateText"
+                   Text="…"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   Foreground="#888888"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+    </Border>
+</Window>
