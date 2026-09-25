@@ -35,6 +35,16 @@ internal static class NativeMethods
     internal const uint SWP_NOZORDER = 0x0004;
     internal const uint SWP_NOACTIVATE = 0x0010;
 
+    // ───────────── 右键菜单相关 ─────────────
+    /// <summary>设置窗口的"拥有者"。注意要用 Ptr 版本写入，详见 SetWindowLongPtr。</summary>
+    internal const int GWL_HWNDPARENT = -8;
+
+    /// <summary>
+    /// 良性消息，什么都不做。官方文档要求：弹出菜单后往自己窗口 Post 一条 WM_NULL，
+    /// 否则同一个菜单第二次弹出时可能"一闪就没"。
+    /// </summary>
+    internal const uint WM_NULL = 0x0000;
+
     // ───────────── 结构体 ─────────────
 
     [StructLayout(LayoutKind.Sequential)]
@@ -97,6 +107,32 @@ internal static class NativeMethods
     internal static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
+    // ───────────── 右键菜单要用到的几个（详见 AppMenu.cs 的说明）─────────────
+
+    /// <summary>
+    /// 把某个窗口设为前台。
+    /// 下拉菜单只有在"本进程是前台窗口"时才会在点到菜单外面时自动关闭，
+    /// 所以弹出菜单前必须先调它。
+    /// ⚠️ 返回值要检查：Windows 的"前台锁定"机制可能让它失败。
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>校验句柄是否还有效（菜单关闭时，用户原来那个窗口可能已经被关掉了）。</summary>
+    [DllImport("user32.dll")]
+    internal static extern bool IsWindow(IntPtr hWnd);
+
+    /// <summary>
+    /// 设置窗口的拥有者。句柄是"指针宽度"的值，必须用 Ptr 版本 ——
+    /// 上面那个 32 位的 SetWindowLongW 适合放样式位，拿来塞 HWND 在 64 位下会截断。
+    /// 本项目只发布 win-x64（见 README），所以直接调 Ptr 入口。
+    /// </summary>
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    internal static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
     // ───────────── imm32.dll ─────────────
 
     /// <summary>判断这个键盘布局是不是输入法（而不是普通键盘，如「英语(美国)」）。</summary>
@@ -106,8 +142,4 @@ internal static class NativeMethods
     /// <summary>取得该窗口所属线程的默认 IME 窗口。跨进程读状态要靠它当"传话筒"。</summary>
     [DllImport("imm32.dll")]
     internal static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
-
-    /// <summary>IME 是否处于"打开"（可用于输入）状态。</summary>
-    [DllImport("imm32.dll")]
-    internal static extern bool ImmGetOpenStatus(IntPtr hIMC);
 }

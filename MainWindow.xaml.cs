@@ -10,15 +10,35 @@ namespace ImeTip;
 
 public partial class MainWindow : Window
 {
-    private static readonly Brush ChineseBrush = CreateFrozenBrush(0x4E, 0xC9, 0xB0);
-    private static readonly Brush EnglishBrush = CreateFrozenBrush(0xE0, 0xA4, 0x58);
-    private static readonly Brush UnknownBrush = CreateFrozenBrush(0x88, 0x88, 0x88);
+    // 主题画刷。故意不做成 static readonly：切换主题时要整体换掉。
+    // 依然 Freeze()：只在切主题时重建（低频），而 ApplyState 每 400ms 只读字段、零分配。
+    private Brush _chineseBrush = Brushes.Transparent;
+    private Brush _englishBrush = Brushes.Transparent;
+    private Brush _unknownBrush = Brushes.Transparent;
 
     private readonly DispatcherTimer _timer;
     private readonly AppSettings _settings = AppSettings.Load();
 
     private TrayIcon? _tray;
+    private AppMenu? _appMenu;
     private IntPtr _hwnd = IntPtr.Zero;
+
+    /// <summary>
+    /// 窗口是否已经真正定位过（ApplyStartupPosition 跑过）。
+    ///
+    /// 专门用来挡住一种情况：诊断模式（--probe）会创建一个窗口做样式自检再立刻关掉，
+    /// 那个窗口从没定位过，Left/Top 是系统给的默认值（物理 32,32）。
+    /// 若不管它，关闭时就把这个无意义的坐标写进配置了 ——
+    /// 用户下次启动会发现方块跑到了屏幕左上角。
+    /// </summary>
+    private bool _positionReady;
+
+    /// <summary>
+    /// 当前显示的是哪种模式。切换主题后要用它把文字颜色重新贴回去 ——
+    /// 否则"中"字会停在旧主题的颜色上，直到用户下次切换输入法才更新，
+    /// 而他可能半天都不切输入法。这是个很容易漏掉的 bug。
+    /// </summary>
+    private ImeMode _lastMode = ImeMode.Unknown;
 
     // 诊断计数：用来区分「刷新循环没跑」和「刷新了但数据本身不对」——这是两个完全不同的 bug
     private int _tickCount;
@@ -29,6 +49,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        // 主题必须在窗口显示之前贴好，否则用户会看到"先深后浅"闪一下
+        ApplyTheme(_settings.Theme);
 
         // 用 Normal 优先级。Background 优先级在调度器繁忙时可能被一直推迟，
         // 对于这种"状态一变就得跟上"的场景不合适。
@@ -80,6 +103,9 @@ public partial class MainWindow : Window
             case (int)NativeMethods.WM_MOUSEACTIVATE:
                 // 点击本窗口时明确回答"别激活我"。
                 // 这是 WS_EX_NOACTIVATE 的加固保险：万一有别的因素想抢焦点，在这里堵死。
+                //
+                // 注意：这只拦"激活"，鼠标消息照常投递 ——
+                // 所以左键拖动和右键弹菜单都不受影响。
                 handled = true;
                 return new IntPtr(NativeMethods.MA_NOACTIVATE);
 
@@ -107,16 +133,24 @@ public partial class MainWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ApplyStartupPosition();
+        _positionReady = true;      // 到这为止位置才算"有意义的"，此前不许保存
 
-        _tray = new TrayIcon(
-            autoStartEnabled: StartupManager.IsEnabled(),
-            autoStartChanged: OnAutoStartChanged,
+        // 一套菜单定义，造出两份实例：悬浮窗一份、托盘一份。
+        // 内容天然完全一致，不用人工维护两份。
+        _appMenu = new AppMenu(
+            isVisible: () => IsVisible,
+            isAutoStartEnabled: StartupManager.IsEnabled,
+            currentTheme: () => _settings.Theme,
             visibilityToggled: ToggleVisibility,
+            autoStartChanged: OnAutoStartChanged,
+            themeChanged: OnThemeChanged,
             exitRequested: ExitApplication);
+
+        _tray = new TrayIcon(_appMenu.TrayMenu, ToggleVisibility);
 
         DiagnosticsLog.Write(
             $"=== ImeTip 启动 PID={Environment.ProcessId} 悬浮窗=0x{_hwnd.ToInt64():X8} " +
-            $"托盘图标=已创建 开机自启={StartupManager.IsEnabled()} ===");
+            $"托盘图标=已创建 主题={_settings.Theme} 开机自启={StartupManager.IsEnabled()} ===");
 
         Refresh();
         _timer.Start();
@@ -126,8 +160,13 @@ public partial class MainWindow : Window
     {
         _timer.Stop();
         SavePosition();
+
         _tray?.Dispose();
         _tray = null;
+
+        // 必须放在 _tray 之后：NotifyIcon 还引用着托盘那份菜单
+        _appMenu?.Dispose();
+        _appMenu = null;
     }
 
     /// <summary>恢复上次的位置；没有记录或记录已失效时，贴到工作区右下角。</summary>
@@ -173,6 +212,9 @@ public partial class MainWindow : Window
 
     private void SavePosition()
     {
+        // 没见过光的窗口不配写入位置，理由见 _positionReady 的注释
+        if (!_positionReady) return;
+
         if (double.IsNaN(Left) || double.IsNaN(Top)) return;
 
         _settings.WindowLeft = Left;
@@ -181,7 +223,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 切换"开机自启"。返回值是**实际生效的状态**，供托盘菜单回填勾选。
+    /// 切换"开机自启"。返回值是**实际生效的状态**，供菜单回填勾选。
     /// 用真实状态回填而不是"我请求的状态"，注册表写失败时界面就不会假装成功。
     /// </summary>
     private static bool OnAutoStartChanged(bool requested)
@@ -194,13 +236,51 @@ public partial class MainWindow : Window
         return actual;
     }
 
+    private void OnThemeChanged(AppTheme theme)
+    {
+        ApplyTheme(theme);
+        _settings.Save();       // 立即落盘，重启后保持
+        DiagnosticsLog.Write($"主题切换为 {theme}");
+    }
+
+    /// <summary>
+    /// 把整窗颜色换成指定主题。只在启动时和用户手动切主题时调用（低频）。
+    /// </summary>
+    private void ApplyTheme(AppTheme theme)
+    {
+        ThemePalette palette = ThemePalette.For(theme);
+        _settings.Theme = theme;
+
+        // 重建三个文字画刷。低频操作，重建最省心，也省得引入资源字典这层间接。
+        // 依然 Freeze()：WPF 渲染时不必反复做安全检查。
+        _chineseBrush = CreateFrozenBrush(palette.Chinese);
+        _englishBrush = CreateFrozenBrush(palette.English);
+        _unknownBrush = CreateFrozenBrush(palette.Unknown);
+
+        Root.Background = CreateFrozenBrush(palette.CardBackground);
+        Root.BorderBrush = CreateFrozenBrush(palette.CardBorder);
+
+        // ⚠️ 关键：把当前显示的文字颜色也重新贴一遍。
+        //    不补这行，切主题后"中/英"字会停在旧主题的颜色上，
+        //    要等到用户下次切换输入法才会更新 —— 而他可能半天都不切。
+        StateText.Foreground = BrushFor(_lastMode);
+    }
+
+    /// <summary>某个模式在当前主题下该用哪个颜色。ApplyState 与 ApplyTheme 共用。</summary>
+    private Brush BrushFor(ImeMode mode) => mode switch
+    {
+        ImeMode.Chinese => _chineseBrush,
+        ImeMode.English => _englishBrush,
+        _ => _unknownBrush,
+    };
+
     private void ToggleVisibility()
     {
         if (IsVisible) HideFromTray();
         else ShowFromTray();
     }
 
-    /// <summary>显示悬浮窗。供托盘菜单、托盘图标单击、以及"第二个实例启动"时调用。</summary>
+    /// <summary>显示悬浮窗。供菜单、托盘图标单击、以及"第二个实例启动"时调用。</summary>
     public void ShowFromTray()
     {
         if (IsVisible) return;
@@ -208,10 +288,9 @@ public partial class MainWindow : Window
         Show();
         Refresh();
         _timer.Start();
-        _tray?.SetVisibleState(true);
     }
 
-    /// <summary>收进托盘。注意这是"隐藏"而不是"退出"——退出只在托盘菜单里提供。</summary>
+    /// <summary>收进托盘。注意这是"隐藏"而不是"退出"——退出只在菜单里提供。</summary>
     private void HideFromTray()
     {
         if (!IsVisible) return;
@@ -219,7 +298,6 @@ public partial class MainWindow : Window
         SavePosition();     // 隐藏前先把位置存下来
         Hide();
         _timer.Stop();      // 看不见的时候不必刷新，省资源
-        _tray?.SetVisibleState(false);
     }
 
     private void ExitApplication()
@@ -265,12 +343,14 @@ public partial class MainWindow : Window
         {
             case ImeMode.Chinese:
                 StateText.Text = "中";
-                StateText.Foreground = ChineseBrush;
+                _lastMode = ImeMode.Chinese;
+                StateText.Foreground = BrushFor(_lastMode);
                 break;
 
             case ImeMode.English:
                 StateText.Text = "英";
-                StateText.Foreground = EnglishBrush;
+                _lastMode = ImeMode.English;
+                StateText.Foreground = BrushFor(_lastMode);
                 break;
 
             case ImeMode.Unreliable:
@@ -278,13 +358,15 @@ public partial class MainWindow : Window
                 //   ① 系统界面（任务栏/托盘弹窗）—— 不是打字目标，不需要更新
                 //   ② 该窗口不通过 IMM32 暴露状态 —— 读不到就别瞎报
                 // 共同做法：保持上一次显示。宁可显示旧信息，也不给确定但错误的答案。
+                // （_lastMode 也保持不变，这样切主题时贴的还是原来那个颜色）
                 Root.ToolTip = tip + Environment.NewLine +
                                $"⚠ {s.RuleUsed} → 保持上一次显示";
                 return;
 
             default:
                 StateText.Text = "?";
-                StateText.Foreground = UnknownBrush;
+                _lastMode = ImeMode.Unknown;
+                StateText.Foreground = BrushFor(_lastMode);
                 break;
         }
 
@@ -313,18 +395,27 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// 右键 = 弹出菜单（不再直接隐藏；"隐藏"就在菜单里）。
+    ///
+    /// ⚠️ 必须用 ButtonUp，不能用 ButtonDown：
+    ///    菜单弹出时会抓取鼠标，紧接着的右键"抬起"会被投递给刚弹出的菜单，
+    ///    于是菜单刚出现就被关掉 —— 典型的"一闪即没"。
+    ///    这也是 Windows 本来的约定（右键抬起才发 WM_CONTEXTMENU）。
+    /// </summary>
+    private void OnMouseRightButtonUp(object sender, MouseButtonEventArgs e)
     {
-        // 右键 = 收进托盘（不是退出）。退出请走托盘菜单。
-        ToggleVisibility();
+        e.Handled = true;
+        _appMenu?.ShowFromBlock(_hwnd);
     }
 
     /// <summary>
     /// 创建并"冻结"画刷。冻结后 WPF 不必每次渲染都做安全检查，也更省内存。
+    /// 参数用 Color 而不是三个 byte：卡片底色/边框带 Alpha，不能被丢掉。
     /// </summary>
-    private static Brush CreateFrozenBrush(byte r, byte g, byte b)
+    private static Brush CreateFrozenBrush(Color color)
     {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        var brush = new SolidColorBrush(color);
         brush.Freeze();
         return brush;
     }

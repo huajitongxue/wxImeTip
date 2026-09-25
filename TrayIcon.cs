@@ -6,52 +6,24 @@ using System.Windows.Forms;
 namespace ImeTip;
 
 /// <summary>
-/// 托盘图标与右键菜单。
+/// 系统托盘图标。
 ///
 /// WPF 没有内置托盘图标，所以借用了 WinForms 的 NotifyIcon —— 这是业界通行做法。
 /// 本文件只依赖 WinForms / Drawing，**不要在这里 using WPF 的命名空间**，
 /// 否则 Color / Point / Brush 这些同名类型会冲突。
+///
+/// 菜单不在这里构建：它由 AppMenu 统一造好（和悬浮窗右键菜单同源），再注入进来。
+/// 这样"两个菜单内容完全一致"这件事是结构上保证的，不靠人工维护。
+/// 勾选状态的同步也不在这里做 —— AppMenu 在每次弹出前从真实状态现算。
 /// </summary>
 internal sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
-    private readonly ToolStripMenuItem _autoStartItem;
-    private readonly ToolStripMenuItem _visibleItem;
 
-    /// <param name="autoStartEnabled">开机自启当前是否已启用（会写入菜单勾选状态）</param>
-    /// <param name="autoStartChanged">
-    /// 用户切换"开机自启"时回调，参数是请求的新状态；
-    /// <b>返回值是实际生效的状态</b>（例如注册表写入失败时返回 false）。
-    /// </param>
-    /// <param name="visibilityToggled">用户要求显示/隐藏悬浮窗</param>
-    /// <param name="exitRequested">用户要求退出程序</param>
-    internal TrayIcon(
-        bool autoStartEnabled,
-        Func<bool, bool> autoStartChanged,
-        Action visibilityToggled,
-        Action exitRequested)
+    /// <param name="menu">托盘右键菜单，由 AppMenu 造好传入。</param>
+    /// <param name="visibilityToggled">左键单击托盘图标 = 显示/隐藏悬浮窗</param>
+    internal TrayIcon(ContextMenuStrip menu, Action visibilityToggled)
     {
-        // 刻意不用 CheckOnClick：让"勾选状态"只由程序根据真实状态设置，
-        // 避免"点一下 → 自动勾选 → 回调里再设置 → 事件再触发"的循环。
-        _visibleItem = new ToolStripMenuItem("显示悬浮窗") { Checked = true };
-        _visibleItem.Click += (_, _) => visibilityToggled();
-
-        _autoStartItem = new ToolStripMenuItem("开机自启") { Checked = autoStartEnabled };
-        _autoStartItem.Click += (_, _) =>
-        {
-            // ⚠️ 必须把实际生效的状态回填到勾选上。
-            //    之前漏了这一步，导致勾永远不变、看起来像"点不动"。
-            //    用"实际状态"而不是"请求状态"，注册表写失败时界面就不会假装成功。
-            bool requested = !_autoStartItem.Checked;
-            _autoStartItem.Checked = autoStartChanged(requested);
-        };
-
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(_visibleItem);
-        menu.Items.Add(_autoStartItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) => exitRequested());
-
         _notifyIcon = new NotifyIcon
         {
             Icon = CreateIcon(),
@@ -66,9 +38,6 @@ internal sealed class TrayIcon : IDisposable
             if (e.Button == MouseButtons.Left) visibilityToggled();
         };
     }
-
-    /// <summary>同步"显示悬浮窗"菜单项的勾选状态。</summary>
-    internal void SetVisibleState(bool visible) => _visibleItem.Checked = visible;
 
     /// <summary>鼠标悬停托盘图标时显示的提示文字（系统限制约 63 个字符）。</summary>
     internal void SetTooltip(string text)

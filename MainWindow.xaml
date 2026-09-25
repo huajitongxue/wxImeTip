@@ -15,9 +15,14 @@
         ShowInTaskbar="False"
         WindowStartupLocation="Manual"
         MouseLeftButtonDown="OnMouseLeftButtonDown"
-        MouseRightButtonDown="OnMouseRightButtonDown">
+        MouseRightButtonUp="OnMouseRightButtonUp">
 
     <!-- x:Name="Root" 让我们能在代码里访问它，用来设置鼠标悬停提示（诊断信息） -->
+    <!--
+        ⚠️ 下面这几个颜色只是"设计器预览用"的深色默认值。
+           运行时一律由 MainWindow.ApplyTheme() 从 Theme.cs 覆盖，
+           所以深浅两套主题的真实配色请改 Theme.cs，改这里不会有任何运行时效果。
+    -->
     <Border x:Name="Root"
             CornerRadius="10"
             Background="#E6262628"
