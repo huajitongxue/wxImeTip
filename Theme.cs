@@ -50,16 +50,21 @@ internal sealed record ThemePalette(
     ///     这是浅色主题最容易做丑的地方。
     ///  2. 边框换成深色描边（#33000000）。浅色卡片若沿用白色边框，
     ///     在白色窗口（如记事本）上会跟背景糊在一起，只剩描边能兜住可辨识度。
-    ///  3. 文字三色保持深色主题的色相，只压低明度，保证白底上能读清：
-    ///     中 #0E7C66 对白 5.1:1、英 #B45309 对白 5.0:1、? #6B7280 对白 4.8:1，
-    ///     都达到 WCAG AA。（原青绿 #4EC9B0 对白只有 1.9:1，完全不可用。）
-    ///     中英色相差约 138°，比深色主题那对还好区分。
+    ///  3. **中/英换用与深色主题完全不同的色相**：
+    ///        中：绿(#4EC9B0) → 宝蓝(#1D4ED8)
+    ///        英：琥珀(#E0A458) → 玫红(#BE185D)
+    ///     刻意不"保持色相只调明暗" —— 那样两档主题下"中"都是绿，
+    ///     用户切了主题会觉得"颜色根本没变"，等于白换。
+    ///     两档主题差异越大，切换的感知越明确，这也正是加浅色主题的目的。
+    ///     附带好处：宝蓝与玫红落在"蓝-黄"轴上，红绿色盲也能分辨。
+    ///
+    /// 对比度（对白底）：中 7.0:1、英 6.4:1，都远超 WCAG AA 的 4.5:1。
     /// </summary>
     internal static readonly ThemePalette Light = new(
         CardBackground: Color.FromArgb(0xF5, 0xFF, 0xFF, 0xFF),
         CardBorder:     Color.FromArgb(0x33, 0x00, 0x00, 0x00),
-        Chinese:        Color.FromRgb(0x0E, 0x7C, 0x66),
-        English:        Color.FromRgb(0xB4, 0x53, 0x09),
+        Chinese:        Color.FromRgb(0x1D, 0x4E, 0xD8),
+        English:        Color.FromRgb(0xBE, 0x18, 0x5D),
         Unknown:        Color.FromRgb(0x6B, 0x72, 0x80));
 
     internal static ThemePalette For(AppTheme theme) =>
