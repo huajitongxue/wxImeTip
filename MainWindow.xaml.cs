@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace ImeTip;
@@ -167,6 +168,59 @@ public partial class MainWindow : Window
         // 必须放在 _tray 之后：NotifyIcon 还引用着托盘那份菜单
         _appMenu?.Dispose();
         _appMenu = null;
+    }
+
+    /// <summary>
+    /// 【诊断用】等界面稳定后，把悬浮窗渲染到内存位图，把颜色分布写进日志，然后退出。
+    /// 用途：验证"某个主题下到底渲染出了什么颜色"，不依赖抓屏也不依赖肉眼。
+    /// </summary>
+    public void SnapshotAndExit()
+    {
+        var timer = new DispatcherTimer(DispatcherPriority.Normal)
+        {
+            Interval = TimeSpan.FromMilliseconds(1500)
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            ReportRenderedColors();
+            Application.Current.Shutdown();
+        };
+        timer.Start();
+    }
+
+    private void ReportRenderedColors()
+    {
+        var size = new Size(Width, Height);
+        Root.Measure(size);
+        Root.Arrange(new Rect(size));
+        Root.UpdateLayout();
+
+        var bitmap = new RenderTargetBitmap(
+            (int)Width, (int)Height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(Root);
+
+        int stride = bitmap.PixelWidth * 4;
+        var pixels = new byte[stride * bitmap.PixelHeight];
+        bitmap.CopyPixels(pixels, stride, 0);
+
+        var counts = new Dictionary<uint, int>();
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            // 内存里是 BGRA，拼成 0xRRGGBB 便于看
+            uint rgb = (uint)((pixels[i + 2] << 16) | (pixels[i + 1] << 8) | pixels[i]);
+            counts[rgb] = counts.TryGetValue(rgb, out int n) ? n + 1 : 1;
+        }
+
+        string top = string.Join("  ", counts.OrderByDescending(kv => kv.Value).Take(12)
+            .Select(kv => $"#{kv.Key >> 16 & 0xFF:X2}{kv.Key >> 8 & 0xFF:X2}{kv.Key & 0xFF:X2}×{kv.Value}"));
+
+        string textColor = StateText.Foreground is SolidColorBrush sb
+            ? $"#{sb.Color.R:X2}{sb.Color.G:X2}{sb.Color.B:X2}"
+            : StateText.Foreground?.ToString() ?? "(null)";
+
+        DiagnosticsLog.Write(
+            $"渲染快照 主题={_settings.Theme} 显示={StateText.Text} 文字画刷={textColor} | 像素分布: {top}");
     }
 
     /// <summary>恢复上次的位置；没有记录或记录已失效时，贴到工作区右下角。</summary>

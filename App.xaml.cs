@@ -35,6 +35,15 @@ public partial class App : Application
             return;
         }
 
+        // 诊断用：把界面渲染到内存位图并把颜色写进日志，然后退出
+        if (e.Args.Contains("--snapshot"))
+        {
+            var probeWindow = new MainWindow();
+            probeWindow.Show();
+            probeWindow.SnapshotAndExit();
+            return;
+        }
+
         // ── 单实例保护 ──
         // 没有它的话，反复双击 exe 会开出多个进程 → 多个托盘图标 + 多个悬浮窗，
         // 用户完全不知道该关哪个（而且关掉一个，另一个还在）。
