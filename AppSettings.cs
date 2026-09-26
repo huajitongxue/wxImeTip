@@ -26,6 +26,24 @@ internal sealed class AppSettings
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AppTheme Theme { get; set; } = AppTheme.Dark;
 
+    // ───────── 透明主题相关（都带默认值，旧配置缺字段时自动取默认，行为与改造前一致）─────────
+
+    /// <summary>卡片不透明度百分比（0 = 全透明，100 = 全不透明）。只在「透明主题」下生效。</summary>
+    public int CardOpacityPercent { get; set; } = 35;
+
+    /// <summary>是否显示卡片边框。透明背景下关掉它更通透，开着则更容易辨认出卡片范围。</summary>
+    public bool ShowCardBorder { get; set; } = true;
+
+    /// <summary>是否给「中/英」字加描边。背景透明时这是可读性的主要保障。</summary>
+    public bool TextOutline { get; set; } = true;
+
+    /// <summary>
+    /// 背景模糊种类。默认 None（不模糊）—— 这是未公开 API，不保证在所有系统上生效，
+    /// 所以默认关闭，让用户主动去试。
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public BlurMode Blur { get; set; } = BlurMode.None;
+
     private static string FolderPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ImeTip");
 

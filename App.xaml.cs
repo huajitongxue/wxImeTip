@@ -21,6 +21,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // 只有菜单里的「退出」才结束进程。
+        //
+        // 为什么必须显式设置：本程序现在有第二个窗口（设置窗口）了。
+        // 默认的 OnLastWindowClose 语义在"主窗口只是 Hide、从不 Close"的场景下容易出意外 ——
+        // 万一哪天关掉设置窗口把整个程序带走了，用户会觉得"点个设置程序就没了"。
+        // 显式声明"只能被主动退出"，最稳。
+        // （--probe / --snapshot / 单实例分支都自己在末尾调 Shutdown()，不受影响。）
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         // 把未处理异常写进日志。GUI 程序出错往往只有一个"闪退"，
         // 没有这层兜底就只能靠猜。
         DispatcherUnhandledException += (_, args) =>

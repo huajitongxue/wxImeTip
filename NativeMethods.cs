@@ -133,6 +133,61 @@ internal static class NativeMethods
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     internal static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
+    // ───────────── dwmapi.dll ─────────────
+
+    /// <summary>窗口圆角偏好。取值 2 = DWMWCP_ROUND。透明合成窗口系统多半会忽略，属于锦上添花。</summary>
+    internal const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MARGINS
+    {
+        public int LeftWidth;
+        public int RightWidth;
+        public int TopHeight;
+        public int BottomHeight;
+    }
+
+    [DllImport("dwmapi.dll")]
+    internal static extern int DwmSetWindowAttribute(
+        IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
+
+    // ───────────── SetWindowCompositionAttribute（未公开 API）─────────────
+    //
+    // 这是给窗口加"模糊/亚克力"的唯一可行路径。详见 WindowEffects.cs 的说明。
+    // ⚠️ 未公开 API：可能随时改、可能在某些系统版本上无效，所以调用方必须容错。
+
+    internal const int WCA_ACCENT_POLICY = 19;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ACCENT_POLICY
+    {
+        /// <summary>0=关闭, 3=BLURBEHIND(模糊), 4=ACRYLICBLURBEHIND(亚克力)</summary>
+        public int AccentState;
+
+        /// <summary>社区实测填 2；不同系统上可能需要试 0，见 WindowEffects 的说明。</summary>
+        public int AccentFlags;
+
+        /// <summary>
+        /// ⚠️ 注意字节顺序是 <b>0xAABBGGRR</b>（ABGR），和 WPF 的 ARGB 顺序不同。
+        /// 这是最容易写错的一处，转换逻辑集中在 WindowEffects.PackAbgr。
+        /// </summary>
+        public int GradientColor;
+
+        public int AnimationId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WINDOWCOMPOSITIONATTRIBDATA
+    {
+        public int Attribute;
+        public IntPtr Data;
+        public int SizeOfData;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern int SetWindowCompositionAttribute(
+        IntPtr hwnd, ref WINDOWCOMPOSITIONATTRIBDATA data);
+
     // ───────────── imm32.dll ─────────────
 
     /// <summary>判断这个键盘布局是不是输入法（而不是普通键盘，如「英语(美国)」）。</summary>

@@ -7,7 +7,6 @@
         Title="ImeTip"
         Width="76" Height="44"
         WindowStyle="None"
-        AllowsTransparency="True"
         Background="Transparent"
         ResizeMode="NoResize"
         Topmost="True"

@@ -40,13 +40,16 @@ internal sealed class AppMenu : IDisposable
         Action visibilityToggled,
         Func<bool, bool> autoStartChanged,
         Action<AppTheme> themeChanged,
+        Action settingsRequested,
         Action exitRequested)
     {
         _trayMenu = BuildMenu(isVisible, isAutoStartEnabled, currentTheme,
-                              visibilityToggled, autoStartChanged, themeChanged, exitRequested);
+                              visibilityToggled, autoStartChanged, themeChanged,
+                              settingsRequested, exitRequested);
 
         _popupMenu = BuildMenu(isVisible, isAutoStartEnabled, currentTheme,
-                               visibilityToggled, autoStartChanged, themeChanged, exitRequested);
+                               visibilityToggled, autoStartChanged, themeChanged,
+                               settingsRequested, exitRequested);
 
         // 悬浮窗那一份关掉时，把前台还给用户
         _popupMenu.Closed += (_, _) => RestorePreviousForeground();
@@ -62,6 +65,7 @@ internal sealed class AppMenu : IDisposable
         Action visibilityToggled,
         Func<bool, bool> autoStartChanged,
         Action<AppTheme> themeChanged,
+        Action settingsRequested,
         Action exitRequested)
     {
         // 刻意不用 CheckOnClick：让"勾选状态"只由程序按真实状态设置，
@@ -69,14 +73,20 @@ internal sealed class AppMenu : IDisposable
         var visibleItem = new ToolStripMenuItem("显示悬浮窗");
         visibleItem.Click += (_, _) => visibilityToggled();
 
-        var lightItem = new ToolStripMenuItem("浅色主题");
-        lightItem.Click += (_, _) => themeChanged(AppTheme.Light);
-
         var darkItem = new ToolStripMenuItem("深色主题");
         darkItem.Click += (_, _) => themeChanged(AppTheme.Dark);
 
+        var lightItem = new ToolStripMenuItem("浅色主题");
+        lightItem.Click += (_, _) => themeChanged(AppTheme.Light);
+
+        var transItem = new ToolStripMenuItem("透明主题");
+        transItem.Click += (_, _) => themeChanged(AppTheme.Transparent);
+
         var autoStartItem = new ToolStripMenuItem("开机自启");
         autoStartItem.Click += (_, _) => autoStartChanged(!autoStartItem.Checked);
+
+        var settingsItem = new ToolStripMenuItem("设置…");
+        settingsItem.Click += (_, _) => settingsRequested();
 
         var exitItem = new ToolStripMenuItem("退出");
         exitItem.Click += (_, _) => exitRequested();
@@ -84,10 +94,13 @@ internal sealed class AppMenu : IDisposable
         var menu = new ContextMenuStrip();
         menu.Items.Add(visibleItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(lightItem);
         menu.Items.Add(darkItem);
+        menu.Items.Add(lightItem);
+        menu.Items.Add(transItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(autoStartItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(settingsItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 
@@ -99,8 +112,9 @@ internal sealed class AppMenu : IDisposable
             autoStartItem.Checked = isAutoStartEnabled();
 
             AppTheme theme = currentTheme();
-            lightItem.Checked = theme == AppTheme.Light;
             darkItem.Checked = theme == AppTheme.Dark;
+            lightItem.Checked = theme == AppTheme.Light;
+            transItem.Checked = theme == AppTheme.Transparent;
         };
 
         return menu;

@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
 
     private TrayIcon? _tray;
     private AppMenu? _appMenu;
+    private SettingsWindow? _settingsWindow;
     private IntPtr _hwnd = IntPtr.Zero;
 
     /// <summary>
@@ -89,8 +91,25 @@ public partial class MainWindow : Window
             NativeMethods.GWL_EXSTYLE,
             exStyle | NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOOLWINDOW);
 
-        // 挂上我们自己的消息处理，拦截几个关键消息（见 WndProc）
-        HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
+        // 挂上我们自己的消息处理，拦截几个关键消息（见 WndProc）。
+        //
+        // ⚠️ 顺带把窗口表面清成透明 —— 这是 AllowsTransparency 的替代方案。
+        //    为什么不再用 AllowsTransparency：它会让窗口变成"分层窗口"，
+        //    而分层窗口会挡住 DWM 的合成效果，模糊/亚克力就永远贴不上去。
+        //    CompositionTarget.BackgroundColor 同样能实现透明背景，且不与合成打架。
+        if (HwndSource.FromHwnd(_hwnd) is { } source)
+        {
+            source.CompositionTarget.BackgroundColor = Colors.Transparent;
+            source.AddHook(WndProc);
+        }
+
+        // 圆角主要靠 XAML 里 Border.CornerRadius 自己画（窗口四角本身就是透明的）。
+        // 这里只是顺手问一句系统，失败完全没关系。
+        WindowEffects.TrySetRoundedCorners(_hwnd);
+
+        // 句柄出来了，必须重新应用一次外观 —— 模糊（accent）没有句柄是贴不上的。
+        // 构造函数里那次调用只能设好颜色。
+        ApplyAppearance();
     }
 
     /// <summary>
@@ -145,13 +164,16 @@ public partial class MainWindow : Window
             visibilityToggled: ToggleVisibility,
             autoStartChanged: OnAutoStartChanged,
             themeChanged: OnThemeChanged,
+            settingsRequested: OpenSettings,
             exitRequested: ExitApplication);
 
         _tray = new TrayIcon(_appMenu.TrayMenu, ToggleVisibility);
 
         DiagnosticsLog.Write(
-            $"=== ImeTip 启动 PID={Environment.ProcessId} 悬浮窗=0x{_hwnd.ToInt64():X8} " +
-            $"托盘图标=已创建 主题={_settings.Theme} 开机自启={StartupManager.IsEnabled()} ===");
+            $"=== ImeTip 启动 PID={Environment.ProcessId} 悬浮窗=0x{_hwnd.ToInt64():X8} 托盘图标=已创建 " +
+            $"主题={_settings.Theme} 不透明度={_settings.CardOpacityPercent}% " +
+            $"边框={(_settings.ShowCardBorder ? "显示" : "隐藏")} 描边={(_settings.TextOutline ? "开" : "关")} " +
+            $"模糊={_settings.Blur} 开机自启={StartupManager.IsEnabled()} ===");
 
         Refresh();
         _timer.Start();
@@ -161,6 +183,10 @@ public partial class MainWindow : Window
     {
         _timer.Stop();
         SavePosition();
+
+        // 先把设置窗口关掉：它是普通窗口，留着会让进程迟迟不退出
+        _settingsWindow?.Close();
+        _settingsWindow = null;
 
         _tray?.Dispose();
         _tray = null;
@@ -298,12 +324,25 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 把整窗颜色换成指定主题。只在启动时和用户手动切主题时调用（低频）。
+    /// 把整窗换成指定主题。只在启动时、切主题时、以及设置窗口改动时调用（低频）。
     /// </summary>
     private void ApplyTheme(AppTheme theme)
     {
-        ThemePalette palette = ThemePalette.For(theme);
         _settings.Theme = theme;
+        ApplyAppearance();
+    }
+
+    /// <summary>
+    /// 按当前设置把整个外观贴上去：文字色、卡片底色（含用户调的透明度）、
+    /// 边框开关、文字描边、以及尽量尝试的背景模糊。
+    ///
+    /// ⚠️ 有两个调用时机很关键：
+    ///   ① 构造时（此时还没句柄）—— 只能设好颜色；
+    ///   ② OnSourceInitialized 之后 —— 这时句柄有了，模糊才贴得上。
+    /// </summary>
+    private void ApplyAppearance()
+    {
+        ThemePalette palette = ThemePalette.For(_settings.Theme);
 
         // 重建三个文字画刷。低频操作，重建最省心，也省得引入资源字典这层间接。
         // 依然 Freeze()：WPF 渲染时不必反复做安全检查。
@@ -311,13 +350,96 @@ public partial class MainWindow : Window
         _englishBrush = CreateFrozenBrush(palette.English);
         _unknownBrush = CreateFrozenBrush(palette.Unknown);
 
-        Root.Background = CreateFrozenBrush(palette.CardBackground);
-        Root.BorderBrush = CreateFrozenBrush(palette.CardBorder);
+        bool transparentTheme = _settings.Theme == AppTheme.Transparent;
+        byte alpha = AlphaFromPercent(_settings.CardOpacityPercent);
+
+        // 模糊只在透明主题下有意义；失败就返回 false，自动退回纯透明。
+        bool blurOn = transparentTheme
+                   && _settings.Blur != BlurMode.None
+                   && WindowEffects.TrySetAccent(_hwnd, _settings.Blur, palette.CardBackground, alpha);
+
+        if (blurOn)
+        {
+            // 底色交给合成层去画，这里必须完全透明，否则会"模糊之上再叠一层色"被压暗两次
+            Root.Background = Brushes.Transparent;
+        }
+        else
+        {
+            if (_hwnd != IntPtr.Zero) WindowEffects.ClearAccent(_hwnd);
+
+            byte a = transparentTheme ? alpha : palette.CardBackground.A;
+            Root.Background = CreateFrozenBrush(Color.FromArgb(
+                a, palette.CardBackground.R, palette.CardBackground.G, palette.CardBackground.B));
+        }
+
+        // 边框只换刷子、不动 BorderThickness —— 改厚度会让文字位置跟着抖一下
+        Root.BorderBrush = _settings.ShowCardBorder
+            ? CreateFrozenBrush(palette.CardBorder)
+            : Brushes.Transparent;
+
+        ApplyTextOutline(palette);
 
         // ⚠️ 关键：把当前显示的文字颜色也重新贴一遍。
         //    不补这行，切主题后"中/英"字会停在旧主题的颜色上，
         //    要等到用户下次切换输入法才会更新 —— 而他可能半天都不切。
         StateText.Foreground = BrushFor(_lastMode);
+
+        _settingsWindow?.ApplyPalette(_settings.Theme);
+    }
+
+    /// <summary>
+    /// 给「中/英」字加描边。背景透明后壁纸任意，没有描边字就可能糊成一片。
+    ///
+    /// 用 DropShadowEffect（ShadowDepth=0 就成了均匀描边）而不是叠 5 个 TextBlock：
+    /// 单字、变化极低频，开销可忽略；而且能自动跟随 Foreground / 主题换色，零布局风险。
+    /// </summary>
+    private void ApplyTextOutline(ThemePalette palette)
+    {
+        if (!_settings.TextOutline || palette.TextOutline.A == 0)
+        {
+            StateText.Effect = null;
+            return;
+        }
+
+        var outline = new DropShadowEffect
+        {
+            Color = palette.TextOutline,
+            ShadowDepth = 0,        // 0 = 四周均匀，不是投影
+            BlurRadius = 3,
+            Opacity = 1.0,
+        };
+        outline.Freeze();
+        StateText.Effect = outline;
+    }
+
+    private static byte AlphaFromPercent(int percent)
+        => (byte)Math.Clamp((int)Math.Round(percent / 100.0 * 255.0), 0, 255);
+
+    /// <summary>设置窗口里改了任何东西 → 立刻重贴外观并落盘，实现"拖动即预览"。</summary>
+    private void OnAppearancePreview()
+    {
+        ApplyAppearance();
+        _settings.Save();
+    }
+
+    /// <summary>打开设置窗口。已经开着就把它提到前面，不重复开。</summary>
+    private void OpenSettings()
+    {
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(
+            _settings,
+            themeChanged: OnThemeChanged,
+            preview: OnAppearancePreview,
+            blurSupported: WindowEffects.BlurAvailable);
+
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show();
+        _settingsWindow.Activate();
     }
 
     /// <summary>某个模式在当前主题下该用哪个颜色。ApplyState 与 ApplyTheme 共用。</summary>
