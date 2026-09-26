@@ -55,9 +55,9 @@ public partial class SettingsWindow : Window
         _blurSupported = blurSupported;
 
         // 模糊下拉：用 Tag 存枚举值，避免依赖"索引恰好等于枚举值"这种脆弱假设
-        BlurCombo.Items.Add(new ComboBoxItem { Content = "无", Tag = BlurMode.None });
-        BlurCombo.Items.Add(new ComboBoxItem { Content = "模糊", Tag = BlurMode.Blur });
-        BlurCombo.Items.Add(new ComboBoxItem { Content = "亚克力", Tag = BlurMode.Acrylic });
+        BlurCombo.Items.Add(CreateBlurItem("无", BlurMode.None));
+        BlurCombo.Items.Add(CreateBlurItem("模糊", BlurMode.Blur));
+        BlurCombo.Items.Add(CreateBlurItem("亚克力", BlurMode.Acrylic));
 
         BlurHint.Text = blurSupported
             ? "模糊/亚克力走的是未公开的系统接口，不保证在所有系统上都生效。看不到任何变化就说明这台机器不支持——不影响其他功能。"
@@ -67,6 +67,20 @@ public partial class SettingsWindow : Window
         _loading = false;
         RefreshScopeState();
         ApplyPalette(_settings.Theme);
+    }
+
+    /// <summary>
+    /// 造一个下拉项，并把前景色挂到资源上。
+    ///
+    /// 下拉项和 RadioButton / CheckBox 是一个毛病：**不继承父控件的前景色**，
+    /// 不显式指定的话展开后就是"深色底上的黑字"，什么都看不见。
+    /// 用 SetResourceReference 而不是直接赋值，这样切主题时能自动跟着变。
+    /// </summary>
+    private static ComboBoxItem CreateBlurItem(string text, BlurMode mode)
+    {
+        var item = new ComboBoxItem { Content = text, Tag = mode };
+        item.SetResourceReference(Control.ForegroundProperty, "LabelBrush");
+        return item;
     }
 
     /// <summary>把控件状态同步成 <see cref="_settings"/> 的当前值。</summary>
@@ -254,5 +268,40 @@ public partial class SettingsWindow : Window
             .Select(kv => $"#{kv.Key >> 16 & 0xFF:X2}{kv.Key >> 8 & 0xFF:X2}{kv.Key & 0xFF:X2}×{kv.Value}"));
 
         DiagnosticsLog.Write($"设置窗渲染快照 {bitmap.PixelWidth}x{bitmap.PixelHeight} | {top}");
+
+        // 逐个报告每个文字的"生效前景色" —— 这是排查"有的字黑有的字白"的关键证据
+        WalkAndReport(Body, 0);
     }
+
+    private static void WalkAndReport(DependencyObject root, int depth)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, i);
+
+            if (child is TextBlock tb)
+            {
+                string text = tb.Text.Length > 12 ? tb.Text[..12] + "…" : tb.Text;
+                DiagnosticsLog.Write(
+                    $"    文字 depth={depth} \"{text}\" 前景={Describe(tb.Foreground)} " +
+                    $"显式={Describe(tb.ReadLocalValue(TextBlock.ForegroundProperty))} " +
+                    $"继承={Describe(TextBlock.GetForeground(tb))}");
+            }
+            else if (child is ContentControl cc && cc.Content is string s)
+            {
+                DiagnosticsLog.Write(
+                    $"    控件 {child.GetType().Name} \"{s}\" 前景={Describe(cc.Foreground)}");
+            }
+
+            WalkAndReport(child, depth + 1);
+        }
+    }
+
+    private static string Describe(object? brush) => brush switch
+    {
+        SolidColorBrush sb => $"#{sb.Color.A:X2}{sb.Color.R:X2}{sb.Color.G:X2}{sb.Color.B:X2}",
+        null => "(空)",
+        _ => brush.ToString() ?? "(?)",
+    };
 }
