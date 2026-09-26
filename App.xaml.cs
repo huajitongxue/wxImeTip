@@ -44,6 +44,22 @@ public partial class App : Application
             return;
         }
 
+        // 【临时验证入口：确认设置窗口渲染出的颜色，验证后删除】
+        if (e.Args.Contains("--settingsshot"))
+        {
+            var shotWindow = new SettingsWindow(
+                AppSettings.Load(), _ => { }, () => { }, WindowEffects.BlurAvailable);
+            shotWindow.Show();
+
+            var shotTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(1200)
+            };
+            shotTimer.Tick += (_, _) => { shotTimer.Stop(); shotWindow.ReportRenderedColors(); Shutdown(); };
+            shotTimer.Start();
+            return;
+        }
+
         // 诊断用：把界面渲染到内存位图并把颜色写进日志，然后退出
         if (e.Args.Contains("--snapshot"))
         {

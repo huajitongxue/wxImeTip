@@ -30,6 +30,16 @@ public partial class MainWindow : Window
     private bool _glassFrameOk;
 
     /// <summary>
+    /// 当前是否已经给窗口贴过模糊（accent）。
+    ///
+    /// ⚠️ 专门用来决定"要不要清掉它"。实测发现：**只要调用过
+    /// SetWindowCompositionAttribute，窗口就会变成不透明** ——
+    /// 所以"明明没开模糊、却主动去调一次 ClearAccent"会把好好的透明窗口搞成色块。
+    /// 只有确实贴过模糊时才需要清。
+    /// </summary>
+    private bool _accentApplied;
+
+    /// <summary>
     /// 窗口是否已经真正定位过（ApplyStartupPosition 跑过）。
     ///
     /// 专门用来挡住一种情况：诊断模式（--probe）会创建一个窗口做样式自检再立刻关掉，
@@ -123,7 +133,15 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 本窗口的原生消息钩子。
-    /// 只要加了 WS_EX_NOACTIVATE，WM_MOVING 就必须处理，否则拖拽会出怪毛病。
+    ///
+    /// ⚠️ 这里**故意不再处理 `WM_MOVING`** —— 以前窗口是分层窗口
+    /// （`AllowsTransparency=True`）时必须手工 `SetWindowPos` 跟随，
+    /// 否则拖动会"松手才跳"。但去掉分层窗口之后，Windows 的模态拖动循环
+    /// 自己就能正常移动窗口，我们再插手反而会和它打架：
+    /// 拖动会变成"鼠标带着窗口越滑越快、松手还在飞"的失控状态。
+    /// （这是实测踩出来的：用户拖动时鼠标从屏幕左边一路滑到右边。）
+    ///
+    /// 结论：**非分层窗口不要手工处理 WM_MOVING。**
     /// </summary>
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -147,17 +165,6 @@ public partial class MainWindow : Window
                 // 明确回答 HTCLIENT 就能保证点击照常进到 WPF。
                 handled = true;
                 return new IntPtr(NativeMethods.HTCLIENT);
-
-            case (int)NativeMethods.WM_MOVING:
-                // 无边框窗口 + NOACTIVATE 时，拖动过程中 Windows 报告的只是
-                // "尚未生效"的新位置（为了让你有机会限制拖动范围）。
-                // 如果不在这里主动挪窗口，就会表现为：
-                //   —— 鼠标在动，窗口纹丝不动，直到松手才"啪"地跳过去。
-                var rect = Marshal.PtrToStructure<NativeMethods.RECT>(lParam);
-                NativeMethods.SetWindowPos(
-                    hwnd, IntPtr.Zero, rect.Left, rect.Top, 0, 0,
-                    NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
-                break;
 
             case (int)NativeMethods.WM_EXITSIZEMOVE:
                 // 拖动结束，把新位置记下来（而不是等退出时才记，
@@ -380,12 +387,21 @@ public partial class MainWindow : Window
 
         if (blurOn)
         {
+            _accentApplied = true;
+
             // 底色交给合成层去画，这里必须完全透明，否则会"模糊之上再叠一层色"被压暗两次
             Root.Background = Brushes.Transparent;
         }
         else
         {
-            if (_hwnd != IntPtr.Zero) WindowEffects.ClearAccent(_hwnd);
+            // ⚠️ 只有**确实贴过模糊**才去清它，没贴过就绝对不要碰。
+            //    实测：只要调过 SetWindowCompositionAttribute，窗口就会变成不透明色块 ——
+            //    "没开模糊却主动调一次 ClearAccent"会把好好的透明窗口毁掉。
+            if (_accentApplied && _hwnd != IntPtr.Zero)
+            {
+                WindowEffects.ClearAccent(_hwnd);
+                _accentApplied = false;
+            }
 
             byte a = transparentTheme ? alpha : palette.CardBackground.A;
             Root.Background = CreateFrozenBrush(Color.FromArgb(

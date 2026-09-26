@@ -103,6 +103,9 @@ dotnet publish -c Release -r win-x64 --self-contained false \
 渲染快照 主题=Light 显示=中 文字画刷=#0E7C66 | 像素分布: #F5F5F5×2764 ... #0E7C66×116 ...
 ```
 
+**设置窗渲染快照**：`ImeTip.exe --settingsshot`
+同上，但报告的是**设置窗口**的渲染颜色。排查"设置窗口里文字看不清"这类问题时用。
+
 ---
 
 ## 已知限制

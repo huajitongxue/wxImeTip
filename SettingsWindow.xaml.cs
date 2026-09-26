@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace ImeTip;
 
@@ -218,5 +219,40 @@ public partial class SettingsWindow : Window
         {
             // 老系统没这个属性，忽略即可
         }
+    }
+
+    /// <summary>
+    /// 【诊断用】把窗口内容渲染到内存位图，报告像素颜色分布。
+    /// 用途：验证"标签到底画成了什么颜色"—— 不靠肉眼、也不靠抓屏。
+    /// 渲染的是 Body（它自己没有背景色），所以出来的颜色基本就是文字颜色，很好判读。
+    /// </summary>
+    internal void ReportRenderedColors()
+    {
+        double w = Body.ActualWidth;
+        double h = Body.ActualHeight;
+        if (w <= 1 || h <= 1)
+        {
+            DiagnosticsLog.Write("设置窗渲染快照 失败：布局尺寸为 0");
+            return;
+        }
+
+        var bitmap = new RenderTargetBitmap((int)w, (int)h, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(Body);
+
+        int stride = bitmap.PixelWidth * 4;
+        var pixels = new byte[stride * bitmap.PixelHeight];
+        bitmap.CopyPixels(pixels, stride, 0);
+
+        var counts = new Dictionary<uint, int>();
+        for (int i = 0; i < pixels.Length; i += 4)
+        {
+            uint rgb = (uint)((pixels[i + 2] << 16) | (pixels[i + 1] << 8) | pixels[i]);
+            counts[rgb] = counts.TryGetValue(rgb, out int n) ? n + 1 : 1;
+        }
+
+        string top = string.Join("  ", counts.OrderByDescending(kv => kv.Value).Take(10)
+            .Select(kv => $"#{kv.Key >> 16 & 0xFF:X2}{kv.Key >> 8 & 0xFF:X2}{kv.Key & 0xFF:X2}×{kv.Value}"));
+
+        DiagnosticsLog.Write($"设置窗渲染快照 {bitmap.PixelWidth}x{bitmap.PixelHeight} | {top}");
     }
 }
