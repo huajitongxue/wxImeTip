@@ -30,6 +30,8 @@ internal static class NativeMethods
     internal const int MA_NOACTIVATE = 3;            // 回答：不要激活
     internal const uint WM_MOVING = 0x0216;          // 拖动过程中，报告"尚未生效"的新位置
     internal const uint WM_EXITSIZEMOVE = 0x0232;    // 拖动/缩放结束
+    internal const uint WM_NCHITTEST = 0x0084;       // 问"这个坐标点在窗口的哪个部位"
+    internal const int HTCLIENT = 1;                 // 回答：客户端区域（保证点击能进到 WPF）
 
     internal const uint SWP_NOSIZE = 0x0001;
     internal const uint SWP_NOZORDER = 0x0004;
@@ -138,6 +140,9 @@ internal static class NativeMethods
     /// <summary>窗口圆角偏好。取值 2 = DWMWCP_ROUND。透明合成窗口系统多半会忽略，属于锦上添花。</summary>
     internal const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
 
+    /// <summary>标题栏是否用深色。取值 1 = 深色。不设的话深色界面会顶着一个亮色标题栏，很割裂。</summary>
+    internal const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct MARGINS
     {
@@ -150,6 +155,20 @@ internal static class NativeMethods
     [DllImport("dwmapi.dll")]
     internal static extern int DwmSetWindowAttribute(
         IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
+
+    /// <summary>
+    /// 把 DWM 的"玻璃框"扩展到指定边距。
+    ///
+    /// ⚠️ 这是让**非分层窗口**真正透明的关键一步，不能省：
+    ///   只设 CompositionTarget.BackgroundColor = Transparent 是不够的 ——
+    ///   那只是让 WPF 自己的合成目标清成透明，但窗口的客户区在 DWM 看来**仍然是不透明的**，
+    ///   最终会渲染成一个色块（用户看到的就是"一个方框，背景不透明"）。
+    ///   调了这个之后，窗口被当作玻璃区域合成，透明才真正生效。
+    ///
+    /// 边距传全 -1 表示"整窗都是玻璃"。前提是已经设好 CompositionTarget.BackgroundColor。
+    /// </summary>
+    [DllImport("dwmapi.dll")]
+    internal static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
     // ───────────── SetWindowCompositionAttribute（未公开 API）─────────────
     //

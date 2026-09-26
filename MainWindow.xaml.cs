@@ -26,6 +26,9 @@ public partial class MainWindow : Window
     private SettingsWindow? _settingsWindow;
     private IntPtr _hwnd = IntPtr.Zero;
 
+    /// <summary>玻璃框是否扩展成功。透明主题要靠它才真正透明，所以值得记进日志。</summary>
+    private bool _glassFrameOk;
+
     /// <summary>
     /// 窗口是否已经真正定位过（ApplyStartupPosition 跑过）。
     ///
@@ -103,6 +106,12 @@ public partial class MainWindow : Window
             source.AddHook(WndProc);
         }
 
+        // ⚠️ 必须紧跟着把玻璃框扩展到整窗。
+        //    只设上面那行是不够的：那只是让 WPF 的内容带 Alpha 画出来，
+        //    而客户区在 DWM 眼里仍是不透明的，最终会渲染成一个色块
+        //    （用户看到的就是"卡片背景根本不是透明的"）。两步缺一不可。
+        _glassFrameOk = WindowEffects.TryExtendGlassFrame(_hwnd);
+
         // 圆角主要靠 XAML 里 Border.CornerRadius 自己画（窗口四角本身就是透明的）。
         // 这里只是顺手问一句系统，失败完全没关系。
         WindowEffects.TrySetRoundedCorners(_hwnd);
@@ -128,6 +137,16 @@ public partial class MainWindow : Window
                 // 所以左键拖动和右键弹菜单都不受影响。
                 handled = true;
                 return new IntPtr(NativeMethods.MA_NOACTIVATE);
+
+            case (int)NativeMethods.WM_NCHITTEST:
+                // 把整窗都声明成"客户端区域"。
+                //
+                // 为什么需要：调了 DwmExtendFrameIntoClientArea 之后，被扩展成"玻璃"的区域
+                // 默认会被当成非客户区（标题栏之类），鼠标消息就不是发到客户区了 ——
+                // 结果是左键拖动和右键菜单可能失灵。
+                // 明确回答 HTCLIENT 就能保证点击照常进到 WPF。
+                handled = true;
+                return new IntPtr(NativeMethods.HTCLIENT);
 
             case (int)NativeMethods.WM_MOVING:
                 // 无边框窗口 + NOACTIVATE 时，拖动过程中 Windows 报告的只是
@@ -173,7 +192,8 @@ public partial class MainWindow : Window
             $"=== ImeTip 启动 PID={Environment.ProcessId} 悬浮窗=0x{_hwnd.ToInt64():X8} 托盘图标=已创建 " +
             $"主题={_settings.Theme} 不透明度={_settings.CardOpacityPercent}% " +
             $"边框={(_settings.ShowCardBorder ? "显示" : "隐藏")} 描边={(_settings.TextOutline ? "开" : "关")} " +
-            $"模糊={_settings.Blur} 开机自启={StartupManager.IsEnabled()} ===");
+            $"模糊={_settings.Blur} 玻璃框={(_glassFrameOk ? "成功" : "失败")} " +
+            $"开机自启={StartupManager.IsEnabled()} ===");
 
         Refresh();
         _timer.Start();

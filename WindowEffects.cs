@@ -71,6 +71,39 @@ internal static class WindowEffects
     }
 
     /// <summary>
+    /// 把整个窗口变成 DWM 的"玻璃区域"，让透明真正生效。
+    ///
+    /// ⚠️ **必须和 <c>CompositionTarget.BackgroundColor = Transparent</c> 配套使用，缺一不可**：
+    ///   前者让 WPF 的内容带 Alpha 画出来，这一步让 DWM 按 Alpha 去合成。
+    ///   只做前者（很容易漏），窗口客户区在 DWM 眼里仍是不透明的，
+    ///   最终就会渲染成一个不透明的色块 —— 用户看到的就是"卡片背景根本不是透明的"。
+    ///
+    /// 边距用全 -1 = "整窗都是玻璃"（官方文档里的写法）。
+    /// </summary>
+    /// <returns>成功 true；DWM 合成被关闭或 API 缺失时 false。</returns>
+    internal static bool TryExtendGlassFrame(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+
+        try
+        {
+            var margins = new NativeMethods.MARGINS
+            {
+                LeftWidth = -1,
+                RightWidth = -1,
+                TopHeight = -1,
+                BottomHeight = -1,
+            };
+            return NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref margins) == 0;
+        }
+        catch
+        {
+            // DWM 合成被关（现代 Windows 不会）或 API 缺失时静默跳过
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 试着让系统给窗口加圆角。
     /// 对"透明合成"的窗口，系统多数情况下会忽略 —— 所以圆角主要还是靠
     /// XAML 里 Border.CornerRadius 自己画的（窗口四角本就是透明的，视觉上就是圆角）。

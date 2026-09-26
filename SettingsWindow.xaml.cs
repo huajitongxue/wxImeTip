@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace ImeTip;
@@ -26,6 +27,18 @@ public partial class SettingsWindow : Window
     /// 白白做一轮无用功，还可能在对象没构造完时引发空引用。
     /// </summary>
     private bool _loading = true;
+
+    private IntPtr _hwnd = IntPtr.Zero;
+
+    /// <summary>
+    /// 句柄出来后重新贴一次配色 —— 标题栏的深色只能通过 DWM 属性设置，必须有句柄。
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        _hwnd = new WindowInteropHelper(this).Handle;
+        ApplyPalette(_settings.Theme);
+    }
 
     internal SettingsWindow(
         AppSettings settings,
@@ -152,7 +165,11 @@ public partial class SettingsWindow : Window
 
     /// <summary>
     /// 让设置窗口自己跟着主题走（深色/透明档用暗色界面，浅色档用亮色界面）。
-    /// 只改底色和前景色，不追求完整换肤 —— 一个工具窗口没必要。
+    ///
+    /// 注意这里**同时**做三件事，缺一都会有"看不见字"或"割裂感"：
+    ///   ① 设窗口底色与前景（前景给 RadioButton / CheckBox 这类走系统模板的控件用）
+    ///   ② 换掉 XAML 里两个具名画刷资源（给显式用了 LabelText 样式的 TextBlock 用）
+    ///   ③ 把标题栏也切成深色（否则深色界面顶着一个亮色标题栏，非常割裂）
     /// </summary>
     internal void ApplyPalette(AppTheme theme)
     {
@@ -163,14 +180,43 @@ public partial class SettingsWindow : Window
             : Color.FromRgb(0xFA, 0xFA, 0xFA));
         background.Freeze();
 
-        var foreground = new SolidColorBrush(useDark
+        var label = new SolidColorBrush(useDark
             ? Color.FromRgb(0xEA, 0xEA, 0xEA)
             : Color.FromRgb(0x1A, 0x1A, 0x1A));
-        foreground.Freeze();
+        label.Freeze();
 
-        // 设在窗口本身而不是 Body 上：Body 有 Margin，只设它的话四周会漏出窗口的默认底色。
-        // Foreground 会自动向下继承给所有子控件。
+        var hint = new SolidColorBrush(useDark
+            ? Color.FromRgb(0xA8, 0xA8, 0xA8)
+            : Color.FromRgb(0x60, 0x60, 0x60));
+        hint.Freeze();
+
         Background = background;
-        Foreground = foreground;
+        Foreground = label;
+
+        // XAML 里用 {DynamicResource LabelBrush} 绑的就是这两个 key，换掉即全局刷新
+        Resources["LabelBrush"] = label;
+        Resources["HintBrush"] = hint;
+
+        ApplyTitleBarTheme(useDark);
+
+        DiagnosticsLog.Write(
+            $"设置窗配色 主题={theme} 底色={background.Color} 标签色={label.Color} 提示色={hint.Color}");
+    }
+
+    /// <summary>把系统标题栏切成深色/浅色，和内容区统一。</summary>
+    private void ApplyTitleBarTheme(bool dark)
+    {
+        if (_hwnd == IntPtr.Zero) return;
+
+        try
+        {
+            int value = dark ? 1 : 0;
+            NativeMethods.DwmSetWindowAttribute(
+                _hwnd, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, ref value, sizeof(int));
+        }
+        catch
+        {
+            // 老系统没这个属性，忽略即可
+        }
     }
 }
