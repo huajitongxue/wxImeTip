@@ -548,6 +548,10 @@ public partial class MainWindow : Window
     {
         _tray?.SetTooltip($"ImeTip：{DescribeMode(s.Mode)}");
 
+        // 托盘图标跟着状态走（中文=青绿「中」、英文=琥珀「E」、读不到=灰「?」）。
+        // Unreliable 时它内部会保持不动，和下面 switch 里"保持上一次显示"的策略一致。
+        _tray?.SetMode(s.Mode);
+
         string tip = s.Describe() + Environment.NewLine +
                      $"刷新={_tickCount}  跳过={_skipCount}  读失败={_failCount}";
 

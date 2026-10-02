@@ -21,23 +21,65 @@ internal sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
 
+    // 三个状态的图标，构造时一次加载完，之后反复复用。
+    // ⚠️ 绝不能 Dispose 掉正在被 _notifyIcon 使用的那个 —— 托盘会立刻变成一块空白，
+    //    所以要等最后的 Dispose 里统一释放。
+    private readonly Icon? _iconChinese;
+    private readonly Icon? _iconEnglish;
+    private readonly Icon? _iconUnknown;
+
     /// <param name="menu">托盘右键菜单，由 AppMenu 造好传入。</param>
     /// <param name="visibilityToggled">左键单击托盘图标 = 显示/隐藏悬浮窗</param>
     internal TrayIcon(ContextMenuStrip menu, Action visibilityToggled)
     {
+        _iconChinese = LoadIcon("tray-zh.ico");
+        _iconEnglish = LoadIcon("tray-en.ico");
+        _iconUnknown = LoadIcon("tray-unknown.ico");
+
         _notifyIcon = new NotifyIcon
         {
-            Icon = CreateIcon(),
+            // 启动那一刻还不知道输入法状态，先挂"中"那一档；
+            // 主窗口很快会做第一次采样，随即纠正成真实状态。
+            // 三个资源全都读不到时才退回几何兜底图标（保证托盘不会是空白）。
+            Icon = _iconChinese ?? CreateFallbackIcon(),
             Text = "ImeTip",
             Visible = true,
             ContextMenuStrip = menu,
         };
+
+        DiagnosticsLog.Write(
+            $"托盘图标三态 = 中{(_iconChinese is null ? "缺失" : "就绪")}、" +
+            $"英{(_iconEnglish is null ? "缺失" : "就绪")}、" +
+            $"未知{(_iconUnknown is null ? "缺失" : "就绪")}");
 
         // 左键单击托盘图标 = 显示/隐藏悬浮窗（和双击都一样，符合直觉）
         _notifyIcon.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left) visibilityToggled();
         };
+    }
+
+    /// <summary>
+    /// 按当前输入法状态换托盘图标。
+    ///
+    /// Unreliable（这个窗口读不到状态）时**保持原样不动** —— 和悬浮窗的处理保持一致：
+    /// 宁可显示旧信息，也不给一个确定但错误的答案。
+    /// </summary>
+    internal void SetMode(ImeMode mode)
+    {
+        Icon? next = mode switch
+        {
+            ImeMode.Chinese => _iconChinese,
+            ImeMode.English => _iconEnglish,
+            ImeMode.Unknown => _iconUnknown,
+            _ => null,                 // Unreliable 等：不切换
+        };
+
+        // 用引用比对挡掉重复赋值 —— 同一个图标反复设置会让托盘闪一下
+        if (next is not null && !ReferenceEquals(_notifyIcon.Icon, next))
+        {
+            _notifyIcon.Icon = next;
+        }
     }
 
     /// <summary>鼠标悬停托盘图标时显示的提示文字（系统限制约 63 个字符）。</summary>
@@ -51,52 +93,53 @@ internal sealed class TrayIcon : IDisposable
     {
         _notifyIcon.Visible = false;   // 必须先隐藏，否则托盘里会留一个"僵尸图标"
         _notifyIcon.Dispose();
+
+        // 图标要等 NotifyIcon 释放之后再放 —— 它此刻还引用着其中一个
+        _iconChinese?.Dispose();
+        _iconEnglish?.Dispose();
+        _iconUnknown?.Dispose();
     }
 
     /// <summary>
-    /// 造托盘图标。
+    /// 从程序集里读出一个托盘图标（assets 目录下的多尺寸 ICO）。
     ///
-    /// 首选做法：直接复用打进程序集里的 icon.ico —— 也就是程序自身的图标文件。
-    /// 这样托盘图标和 exe 图标永远同款：以后想换图标，只需重跑一次
-    /// tools/make-icon.py，不会出现"改了一个忘了另一个"。
-    ///
-    /// 兜底：万一资源读不出来（理论上不该发生），退回到下面纯几何绘制的圆点图标，
-    /// 保证托盘里永远不会是个空白。
+    /// 读不到时返回 null 而不是抛异常 —— 由调用方决定怎么兜底，
+    /// 不能让"图标没找到"这种事把整个程序拖崩。
     /// </summary>
-    private static Icon CreateIcon()
+    private static Icon? LoadIcon(string fileName)
     {
         try
         {
             // 资源名 = 根命名空间 + "." + 项目内相对路径（斜杠换成点）
-            string resourceName = $"{typeof(TrayIcon).Namespace}.icon.ico";
+            string resourceName = $"{typeof(TrayIcon).Namespace}.assets.{fileName}";
 
             using Stream? stream = typeof(TrayIcon).Assembly
                 .GetManifestResourceStream(resourceName);
 
-            if (stream is not null)
+            if (stream is null)
             {
-                // 从多尺寸 ICO 里挑最贴近系统小图标尺寸的那一档。
-                // 高 DPI 下 SmallIconSize 会大于 16，这里跟着一起变大，避免放大发虚。
-                Size target = SystemInformation.SmallIconSize;
-                using var loaded = new Icon(stream, target);
-
+                // 顺手把现有资源名打出来，免得为了一个名字反复猜
                 DiagnosticsLog.Write(
-                    $"托盘图标 = 复用 icon.ico（取 {target.Width}x{target.Height} 那一档）");
-                return (Icon)loaded.Clone();
+                    $"⚠ 读不到托盘图标 {resourceName}；程序集里现有：" +
+                    string.Join(", ", typeof(TrayIcon).Assembly.GetManifestResourceNames()));
+                return null;
             }
+
+            // 从多尺寸 ICO 里挑最贴近系统小图标尺寸的那一档。
+            // 高 DPI 下 SmallIconSize 会大于 16，这里跟着一起变大，避免放大发虚。
+            Size target = SystemInformation.SmallIconSize;
+            using var loaded = new Icon(stream, target);
+            return (Icon)loaded.Clone();
         }
         catch
         {
-            // 落到下面兜底，不让托盘图标把整个程序拖崩
+            return null;
         }
-
-        DiagnosticsLog.Write("托盘图标 = 兜底几何图标（icon.ico 资源没读到）");
-        return CreateFallbackIcon();
     }
 
     /// <summary>
     /// 兜底图标：深色圆 + 中间一个青绿点（纯几何绘制，不依赖任何外部文件）。
-    /// 只在 icon.ico 资源读不到时才会用到。
+    /// 只在托盘图标资源全都读不到时才会用到（理论上不该发生）。
     /// </summary>
     private static Icon CreateFallbackIcon()
     {

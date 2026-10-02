@@ -29,10 +29,13 @@
 
   <ItemGroup>
     <!--
-      把图标同时作为"嵌入资源"打进程序集，托盘图标会复用它（见 TrayIcon.cs）。
-      这样程序图标和托盘图标来自同一个文件，结构上就不可能不一致。
+      托盘图标的三个状态（中 / 英 / 读不到）作为嵌入资源打进程序集，见 TrayIcon.cs。
+      为什么不复用上面那个 icon.ico：exe 图标是静态的"中英并列"，
+      而托盘图标要跟着输入法状态实时切换，两者本来就是不同的图。
     -->
-    <EmbeddedResource Include="icon.ico" />
+    <EmbeddedResource Include="assets\tray-zh.ico" />
+    <EmbeddedResource Include="assets\tray-en.ico" />
+    <EmbeddedResource Include="assets\tray-unknown.ico" />
   </ItemGroup>
 
   <!--
