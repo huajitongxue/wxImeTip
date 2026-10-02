@@ -64,12 +64,39 @@ dotnet publish -c Release -r win-x64 --self-contained false \
 | `WindowEffects.cs` | 背景模糊/亚克力的封装（含"失败就降级"的容错，改用公开 API 会失效） |
 | `SettingsWindow.xaml(.cs)` | 设置窗口（透明度滑杆、边框/描边开关、模糊选择） |
 | `MainWindow.xaml(.cs)` | 悬浮窗界面与交互 |
-| `TrayIcon.cs` | 托盘图标（菜单由 AppMenu 注入） |
+| `TrayIcon.cs` | 托盘图标（直接复用 `icon.ico`，菜单由 AppMenu 注入） |
+| `icon.svg` / `icon.ico` | 程序图标（**由 `tools/make-icon.py` 生成，别手改**） |
+| `tools/make-icon.py` | 生成图标的脚本（想换图标就改它再重跑） |
 | `AppSettings.cs` | 设置持久化（`%APPDATA%\ImeTip\settings.json`） |
 | `StartupManager.cs` | 开机自启（写 `HKCU\...\Run`） |
 | `DiagnosticsLog.cs` | 诊断日志 |
 | `ImeStateProbe.cs` | `--probe` 诊断模式 |
 | `使用说明.md` | **面向使用者**的说明（每次 publish 自动复制到输出目录并改名 `README.md`） |
+
+### 换图标
+
+图标不是画好的图片，而是**由一个脚本生成的**：
+
+```bash
+python tools/make-icon.py
+```
+
+它同时产出两样东西：
+
+| 产物 | 用途 |
+|---|---|
+| `icon.svg` | 矢量源文件（想编辑或放到别处用就改它） |
+| `icon.ico` | 给 Windows 用的 8 档尺寸（16/20/24/32/48/64/128/256） |
+
+想调配色或形状，改脚本顶部的「设计参数」再重跑即可。**程序图标和托盘图标会一起变**——
+托盘图标直接复用 `icon.ico`，不存在"改了一个忘了另一个"。
+
+脚本里有两个容易忽略但很关键的细节（都写在文件开头的注释里）：
+- **小尺寸会光学补偿**：16px 下「中」字只剩 7 个像素高，所以小图标里的字会相对放大，
+  和大图标不是同一套比例。
+- **`anchor="mm"` 并不真的居中**：实测微软雅黑会偏下约 4.4%，脚本会量一次并补偿。
+
+需要 Python + Pillow（`pip install pillow`）。**只在生成图标时需要，编译程序不需要。**
 
 ### 两种发布方式
 
@@ -149,3 +176,11 @@ dotnet publish -c Release -r win-x64 --self-contained false \
    官方文档明确"应用窗口停用"会回退成纯色，而本窗口为了不抢焦点是故意永不激活的。
    所以模糊只能走未公开的 `SetWindowCompositionAttribute`（唯一在失焦态仍有效的路径，
    TranslucentTB 也是用它），并且**必须假设它会失败** —— 失败就安静降级成纯透明。
+10. **托盘图标不要自己画**：直接复用嵌在程序集里的 `icon.ico`
+    （`GetManifestResourceStream` + `new Icon(stream, size)`）。这样 exe 图标和托盘图标
+    来自同一个文件，结构上就不可能不一致。三个细节：
+    · 资源名是"根命名空间 + 相对路径（斜杠换成点）"，用 `typeof(TrayIcon).Namespace`
+      拼出来，项目改名也不会失效。
+    · 取尺寸用 `SystemInformation.SmallIconSize` 而**不是写死 16** ——
+      高 DPI 下它是 20 或 24，写死 16 会被系统放大、发虚。
+    · 留一个纯几何绘制的兜底图标，资源读不到时托盘才不会变成一块空白。

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"
+     width="256" height="256" role="img">
+  <title>ImeTip</title>
+  <desc>深色圆角方块内的青绿中字，右下角一个琥珀色状态点。</desc>
+
+  <rect width="256" height="256" rx="56" fill="#262628"/>
+  <rect x="4" y="4"
+        width="248" height="248"
+        rx="52" fill="none"
+        stroke="#55555A" stroke-width="8"/>
+
+  <text x="128" y="128" text-anchor="middle" dominant-baseline="central"
+        font-family="Microsoft YaHei, PingFang SC, Noto Sans SC, sans-serif"
+        font-size="120" font-weight="700" fill="#4EC9B0">中</text>
+
+  <circle cx="216" cy="216" r="16" fill="#E0A458"/>
+</svg>

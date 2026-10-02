@@ -8,6 +8,12 @@
     <UseWPF>true</UseWPF>
     <!-- 托盘图标用的 NotifyIcon 来自 WinForms：WPF 本身没有托盘图标控件 -->
     <UseWindowsForms>true</UseWindowsForms>
+
+    <!--
+      程序图标。资源管理器、任务栏、窗口标题栏都显示它。
+      图标由 tools/make-icon.py 生成：想改配色或形状就改那个脚本再跑一遍。
+    -->
+    <ApplicationIcon>icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +25,14 @@
     -->
     <Using Remove="System.Drawing" />
     <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      把图标同时作为"嵌入资源"打进程序集，托盘图标会复用它（见 TrayIcon.cs）。
+      这样程序图标和托盘图标来自同一个文件，结构上就不可能不一致。
+    -->
+    <EmbeddedResource Include="icon.ico" />
   </ItemGroup>
 
   <!--

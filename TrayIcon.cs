@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -53,10 +54,51 @@ internal sealed class TrayIcon : IDisposable
     }
 
     /// <summary>
-    /// 在内存里画一个托盘图标：深色圆 + 中间一个青绿点。
-    /// 这样就不必额外附带一个 .ico 文件，也方便以后按状态换颜色。
+    /// 造托盘图标。
+    ///
+    /// 首选做法：直接复用打进程序集里的 icon.ico —— 也就是程序自身的图标文件。
+    /// 这样托盘图标和 exe 图标永远同款：以后想换图标，只需重跑一次
+    /// tools/make-icon.py，不会出现"改了一个忘了另一个"。
+    ///
+    /// 兜底：万一资源读不出来（理论上不该发生），退回到下面纯几何绘制的圆点图标，
+    /// 保证托盘里永远不会是个空白。
     /// </summary>
     private static Icon CreateIcon()
+    {
+        try
+        {
+            // 资源名 = 根命名空间 + "." + 项目内相对路径（斜杠换成点）
+            string resourceName = $"{typeof(TrayIcon).Namespace}.icon.ico";
+
+            using Stream? stream = typeof(TrayIcon).Assembly
+                .GetManifestResourceStream(resourceName);
+
+            if (stream is not null)
+            {
+                // 从多尺寸 ICO 里挑最贴近系统小图标尺寸的那一档。
+                // 高 DPI 下 SmallIconSize 会大于 16，这里跟着一起变大，避免放大发虚。
+                Size target = SystemInformation.SmallIconSize;
+                using var loaded = new Icon(stream, target);
+
+                DiagnosticsLog.Write(
+                    $"托盘图标 = 复用 icon.ico（取 {target.Width}x{target.Height} 那一档）");
+                return (Icon)loaded.Clone();
+            }
+        }
+        catch
+        {
+            // 落到下面兜底，不让托盘图标把整个程序拖崩
+        }
+
+        DiagnosticsLog.Write("托盘图标 = 兜底几何图标（icon.ico 资源没读到）");
+        return CreateFallbackIcon();
+    }
+
+    /// <summary>
+    /// 兜底图标：深色圆 + 中间一个青绿点（纯几何绘制，不依赖任何外部文件）。
+    /// 只在 icon.ico 资源读不到时才会用到。
+    /// </summary>
+    private static Icon CreateFallbackIcon()
     {
         using var bitmap = new Bitmap(32, 32);
         using (Graphics g = Graphics.FromImage(bitmap))
