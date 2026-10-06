@@ -48,7 +48,7 @@ public partial class App : Application
         if (e.Args.Contains("--settingsshot"))
         {
             var shotWindow = new SettingsWindow(
-                AppSettings.Load(), _ => { }, () => { }, WindowEffects.BlurAvailable);
+                AppSettings.Load(), _ => { }, () => { }, () => { }, WindowEffects.BlurAvailable);
             shotWindow.Show();
 
             var shotTimer = new System.Windows.Threading.DispatcherTimer

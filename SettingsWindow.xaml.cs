@@ -20,6 +20,7 @@ public partial class SettingsWindow : Window
     private readonly AppSettings _settings;
     private readonly Action _preview;
     private readonly Action<AppTheme> _themeChanged;
+    private readonly Action _hotkeyChanged;
     private readonly bool _blurSupported;
 
     /// <summary>
@@ -45,6 +46,7 @@ public partial class SettingsWindow : Window
         AppSettings settings,
         Action<AppTheme> themeChanged,
         Action preview,
+        Action hotkeyChanged,
         bool blurSupported)
     {
         InitializeComponent();
@@ -52,6 +54,7 @@ public partial class SettingsWindow : Window
         _settings = settings;
         _themeChanged = themeChanged;
         _preview = preview;
+        _hotkeyChanged = hotkeyChanged;
         _blurSupported = blurSupported;
 
         // 模糊下拉：用 Tag 存枚举值，避免依赖"索引恰好等于枚举值"这种脆弱假设
@@ -95,6 +98,8 @@ public partial class SettingsWindow : Window
 
         BorderCheck.IsChecked = _settings.ShowCardBorder;
         OutlineCheck.IsChecked = _settings.TextOutline;
+
+        SummonHotkeyCheck.IsChecked = _settings.HotkeySummonEnabled;
 
         foreach (ComboBoxItem item in BlurCombo.Items)
         {
@@ -176,6 +181,18 @@ public partial class SettingsWindow : Window
 
         _settings.Blur = mode;
         _preview();
+    }
+
+    /// <summary>
+    /// 快捷键开关。走的是**独立回调**（不是外观预览那条）——
+    /// 它要干的事是"装/卸键盘钩子"，跟重新贴一遍颜色不是一回事，混在一起语义就乱了。
+    /// </summary>
+    private void OnHotkeyOptionChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        _settings.HotkeySummonEnabled = SummonHotkeyCheck.IsChecked == true;
+        _hotkeyChanged();
     }
 
     /// <summary>

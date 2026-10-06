@@ -44,6 +44,18 @@ internal sealed class AppSettings
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public BlurMode Blur { get; set; } = BlurMode.None;
 
+    // ───────── 快捷键 ─────────
+    //
+    // 以后再加新快捷键，就在这一节里继续加字段（都带默认值，保证旧配置能读）。
+
+    /// <summary>
+    /// 「单独按一下 Ctrl，把方框召到鼠标旁边」是否启用。
+    ///
+    /// 默认**开启** —— 这是主动加的功能。关掉时程序会**完全卸载键盘钩子**，
+    /// 一个按键都不再监听，比"留着钩子加个开关"更干净。
+    /// </summary>
+    public bool HotkeySummonEnabled { get; set; } = true;
+
     private static string FolderPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ImeTip");
 

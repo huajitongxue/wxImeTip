@@ -24,6 +24,13 @@ public partial class MainWindow : Window
     private TrayIcon? _tray;
     private AppMenu? _appMenu;
     private SettingsWindow? _settingsWindow;
+
+    /// <summary>全局快捷键（目前只有"单独按一下 Ctrl"这一条）。</summary>
+    private HotkeyManager? _hotkeys;
+
+    /// <summary>快捷召唤的触发次数。只用来在日志里记前几次，方便确认功能确实生效，
+    /// 之后就不记了 —— 不然每次打字前按一下 Ctrl 都会刷一行日志。</summary>
+    private int _summonCount;
     private IntPtr _hwnd = IntPtr.Zero;
 
     /// <summary>玻璃框是否扩展成功。透明主题要靠它才真正透明，所以值得记进日志。</summary>
@@ -195,11 +202,16 @@ public partial class MainWindow : Window
 
         _tray = new TrayIcon(_appMenu.TrayMenu, ToggleVisibility);
 
+        // 全局快捷键。钩子是否真的装上由设置决定（见 SyncHotkeyState）。
+        _hotkeys = new HotkeyManager(SummonToCursor);
+        SyncHotkeyState();
+
         DiagnosticsLog.Write(
             $"=== ImeTip 启动 PID={Environment.ProcessId} 悬浮窗=0x{_hwnd.ToInt64():X8} 托盘图标=已创建 " +
             $"主题={_settings.Theme} 不透明度={_settings.CardOpacityPercent}% " +
             $"边框={(_settings.ShowCardBorder ? "显示" : "隐藏")} 描边={(_settings.TextOutline ? "开" : "关")} " +
             $"模糊={_settings.Blur} 玻璃框={(_glassFrameOk ? "成功" : "失败")} " +
+            $"快捷键Ctrl召唤={(_settings.HotkeySummonEnabled ? "开" : "关")} " +
             $"开机自启={StartupManager.IsEnabled()} ===");
 
         Refresh();
@@ -210,6 +222,11 @@ public partial class MainWindow : Window
     {
         _timer.Stop();
         SavePosition();
+
+        // 卸掉键盘钩子。不卸的话，虽然进程退出时系统也会清理，
+        // 但显式卸载更干净，也避免调试时留下一个"还在监听"的残留。
+        _hotkeys?.Dispose();
+        _hotkeys = null;
 
         // 先把设置窗口关掉：它是普通窗口，留着会让进程迟迟不退出
         _settingsWindow?.Close();
@@ -451,6 +468,87 @@ public partial class MainWindow : Window
     private static byte AlphaFromPercent(int percent)
         => (byte)Math.Clamp((int)Math.Round(percent / 100.0 * 255.0), 0, 255);
 
+    /// <summary>
+    /// 按设置里的开关启用/停用键盘钩子。
+    ///
+    /// 停用时是**真的卸载钩子**，而不是"留着钩子再加个 if 判断"——
+    /// 不监听就是彻底不监听，比"监听了但不用"干净。
+    /// </summary>
+    private void SyncHotkeyState()
+    {
+        if (_hotkeys is null) return;
+
+        if (_settings.HotkeySummonEnabled) _hotkeys.TryStart();
+        else _hotkeys.Stop();
+    }
+
+    /// <summary>设置窗口里改了快捷键开关 → 立刻启用/停用并落盘。</summary>
+    private void OnHotkeyChanged()
+    {
+        SyncHotkeyState();
+        _settings.Save();
+    }
+
+    /// <summary>
+    /// 把悬浮窗召到鼠标光标正上方（水平居中对齐），像"叫过来"一样。
+    ///
+    /// 想解决的麻烦：平时方框放在屏幕边缘不碍事，可真要打字时它又太远，
+    /// 得用鼠标把它"拽"到输入框旁边 —— 这一下既打断思路又要瞄准。
+    /// 现在鼠标停在输入框上、按一下 Ctrl，方框就自己过来了。
+    ///
+    /// 全程用**物理像素**坐标：GetCursorPos / GetWindowRect / SetWindowPos 都是物理像素，
+    /// 一律不掺 WPF 的逻辑坐标 —— 少一次 DPI 换算就少一个出错的地方。
+    /// 窗口尺寸也从 GetWindowRect 现取，而不是用 Width/Height 属性
+    /// （那是逻辑值，在 125% / 150% 缩放下跟物理像素对不上）。
+    ///
+    /// ⚠️ 刻意**不调 SavePosition()**：用户希望"记住的位置"仍然是他手动拖到的那个，
+    ///    按 Ctrl 只是临时召唤一下。所以移动完就完事，不写配置文件。
+    /// </summary>
+    private void SummonToCursor()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        if (!IsVisible) return;              // 已经收进托盘了就别乱动
+
+        if (!NativeMethods.GetCursorPos(out NativeMethods.POINT cursor)) return;
+        if (!NativeMethods.GetWindowRect(_hwnd, out NativeMethods.RECT box)) return;
+
+        int w = box.Right - box.Left;
+        int h = box.Bottom - box.Top;
+
+        // 鼠标指针自己就有高度（约 20px），这里再留一点空隙，
+        // 免得方框压住指针，或者压住正在输入的那一行字。
+        const int gap = 28;
+
+        int left = cursor.X - w / 2;         // 水平居中于鼠标
+        int top = cursor.Y - h - gap;        // 落在鼠标正上方
+
+        // ── 屏幕边界处理 ──
+        // 用"虚拟屏幕"（所有显示器拼起来的并集）而不是主屏，多显示器时左上角可能是负数。
+        int screenLeft = NativeMethods.GetSystemMetrics(NativeMethods.SM_XVIRTUALSCREEN);
+        int screenTop = NativeMethods.GetSystemMetrics(NativeMethods.SM_YVIRTUALSCREEN);
+        int screenW = NativeMethods.GetSystemMetrics(NativeMethods.SM_CXVIRTUALSCREEN);
+        int screenH = NativeMethods.GetSystemMetrics(NativeMethods.SM_CYVIRTUALSCREEN);
+
+        // 鼠标贴着屏幕顶部时，上方根本放不下 → 改放到鼠标下方
+        if (top < screenTop) top = cursor.Y + gap;
+
+        // 水平方向也夹进屏幕内，免得跑出可视范围
+        left = Math.Clamp(left, screenLeft, Math.Max(screenLeft, screenLeft + screenW - w));
+        top = Math.Clamp(top, screenTop, Math.Max(screenTop, screenTop + screenH - h));
+
+        NativeMethods.SetWindowPos(
+            _hwnd, IntPtr.Zero, left, top, 0, 0,
+            NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+
+        // 只记前几次，便于确认功能确实生效；之后不记，免得刷日志
+        if (_summonCount < 3)
+        {
+            _summonCount++;
+            DiagnosticsLog.Write(
+                $"Ctrl 快捷召唤 #{_summonCount} → 鼠标({cursor.X},{cursor.Y})，方框移到({left},{top})");
+        }
+    }
+
     /// <summary>设置窗口里改了任何东西 → 立刻重贴外观并落盘，实现"拖动即预览"。</summary>
     private void OnAppearancePreview()
     {
@@ -471,6 +569,7 @@ public partial class MainWindow : Window
             _settings,
             themeChanged: OnThemeChanged,
             preview: OnAppearancePreview,
+            hotkeyChanged: OnHotkeyChanged,
             blurSupported: WindowEffects.BlurAvailable);
 
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;

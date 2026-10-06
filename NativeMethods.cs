@@ -135,6 +135,79 @@ internal static class NativeMethods
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     internal static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
+    // ───────────── 全局键盘钩子（低级）─────────────
+    //
+    // 用途：监听"单独按一下 Ctrl"这个动作，见 HotkeyManager.cs。
+    //
+    // ⚠️ 这里用的是 WH_KEYBOARD_**LL**（低级钩子），不是普通的 WH_KEYBOARD。
+    //    区别很关键：普通钩子需要把 DLL 注入到所有进程里（托管代码做不到），
+    //    低级钩子由系统在"按键刚进系统时"统一回调我们，**不需要注入**，
+    //    所以 .NET 程序可以直接用。
+
+    internal const int WH_KEYBOARD_LL = 13;
+
+    internal const int WM_KEYDOWN = 0x0100;
+    internal const int WM_KEYUP = 0x0101;
+    internal const int WM_SYSKEYDOWN = 0x0104;   // 带 Alt 的按键走这两个
+    internal const int WM_SYSKEYUP = 0x0105;
+
+    internal const int VK_CONTROL = 0x11;
+    internal const int VK_LCONTROL = 0xA2;
+    internal const int VK_RCONTROL = 0xA3;
+
+    /// <summary>该按键是程序模拟出来的（不是真人按的）。用它过滤掉自动化脚本的干扰。</summary>
+    internal const uint LLKHF_INJECTED = 0x00000010;
+
+    /// <summary>虚拟屏幕（所有显示器拼起来的并集）。多显示器时左上角可能是负数。</summary>
+    internal const int SM_XVIRTUALSCREEN = 76;
+    internal const int SM_YVIRTUALSCREEN = 77;
+    internal const int SM_CXVIRTUALSCREEN = 78;
+    internal const int SM_CYVIRTUALSCREEN = 79;
+
+    /// <summary>低级键盘钩子的回调签名。⚠️ 存这个委托的字段必须是静态的，否则会被 GC 回收。</summary>
+    internal delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;      // 虚拟键码
+        public uint scanCode;
+        public uint flags;       // 位 4 = LLKHF_INJECTED
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr SetWindowsHookEx(
+        int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    /// <summary>把消息继续往下传。**我们永远调它** —— 钩子只是"旁听"，不拦截按键。</summary>
+    [DllImport("user32.dll")]
+    internal static extern IntPtr CallNextHookEx(
+        IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    [DllImport("user32.dll")]
+    internal static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    internal static extern int GetSystemMetrics(int nIndex);
+
     // ───────────── dwmapi.dll ─────────────
 
     /// <summary>窗口圆角偏好。取值 2 = DWMWCP_ROUND。透明合成窗口系统多半会忽略，属于锦上添花。</summary>

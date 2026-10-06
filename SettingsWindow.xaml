@@ -86,6 +86,20 @@
         <TextBlock x:Name="BlurHint" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
                    Foreground="{DynamicResource HintBrush}"/>
 
+        <!--
+            ═══════════ 快捷键 ═══════════
+            以后再加新快捷键，就在这个区块里继续往下加控件（CheckBox / 下拉框都行），
+            每项独立一个开关、互不影响。后台那边只要在 HotkeyManager 里多接一个动作。
+        -->
+        <TextBlock Text="快捷键" FontWeight="SemiBold" Margin="0,18,0,0"
+                   Style="{StaticResource LabelText}"/>
+        <CheckBox x:Name="SummonHotkeyCheck" Content="按一下 Ctrl，把方框召到鼠标旁边" Margin="0,8,0,0"
+                  Foreground="{DynamicResource LabelBrush}"
+                  Checked="OnHotkeyOptionChanged" Unchecked="OnHotkeyOptionChanged"/>
+        <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
+                   Foreground="{DynamicResource HintBrush}"
+                   Text="只认「单独按一下 Ctrl」：中途按了别的键就不算数。所以 Ctrl+C 复制、Ctrl+滚轮 缩放都不会让方框乱跳。关掉时程序会彻底卸载键盘钩子，一个按键都不再监听。"/>
+
         <TextBlock x:Name="ScopeHint" TextWrapping="Wrap" Margin="0,16,0,0" FontSize="12"
                    Foreground="{DynamicResource HintBrush}"/>
     </StackPanel>
