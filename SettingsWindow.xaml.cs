@@ -57,11 +57,6 @@ public partial class SettingsWindow : Window
         _hotkeyChanged = hotkeyChanged;
         _blurSupported = blurSupported;
 
-        // 模糊下拉：用 Tag 存枚举值，避免依赖"索引恰好等于枚举值"这种脆弱假设
-        BlurCombo.Items.Add(CreateBlurItem("无", BlurMode.None));
-        BlurCombo.Items.Add(CreateBlurItem("模糊", BlurMode.Blur));
-        BlurCombo.Items.Add(CreateBlurItem("亚克力", BlurMode.Acrylic));
-
         BlurHint.Text = blurSupported
             ? "模糊/亚克力走的是未公开的系统接口，不保证在所有系统上都生效。看不到任何变化就说明这台机器不支持——不影响其他功能。"
             : "当前系统不支持背景模糊（需要 Windows 10 1809 及以上），将使用纯透明。";
@@ -70,20 +65,6 @@ public partial class SettingsWindow : Window
         _loading = false;
         RefreshScopeState();
         ApplyPalette(_settings.Theme);
-    }
-
-    /// <summary>
-    /// 造一个下拉项，并把前景色挂到资源上。
-    ///
-    /// 下拉项和 RadioButton / CheckBox 是一个毛病：**不继承父控件的前景色**，
-    /// 不显式指定的话展开后就是"深色底上的黑字"，什么都看不见。
-    /// 用 SetResourceReference 而不是直接赋值，这样切主题时能自动跟着变。
-    /// </summary>
-    private static ComboBoxItem CreateBlurItem(string text, BlurMode mode)
-    {
-        var item = new ComboBoxItem { Content = text, Tag = mode };
-        item.SetResourceReference(Control.ForegroundProperty, "LabelBrush");
-        return item;
     }
 
     /// <summary>把控件状态同步成 <see cref="_settings"/> 的当前值。</summary>
@@ -101,14 +82,9 @@ public partial class SettingsWindow : Window
 
         SummonHotkeyCheck.IsChecked = _settings.HotkeySummonEnabled;
 
-        foreach (ComboBoxItem item in BlurCombo.Items)
-        {
-            if (item.Tag is BlurMode mode && mode == _settings.Blur)
-            {
-                BlurCombo.SelectedItem = item;
-                break;
-            }
-        }
+        BlurNoneRadio.IsChecked = _settings.Blur == BlurMode.None;
+        BlurBlurRadio.IsChecked = _settings.Blur == BlurMode.Blur;
+        BlurAcrylicRadio.IsChecked = _settings.Blur == BlurMode.Acrylic;
     }
 
     /// <summary>
@@ -136,7 +112,7 @@ public partial class SettingsWindow : Window
 
         OpacitySlider.IsEnabled = transparent;
         OutlineCheck.IsEnabled = transparent;
-        BlurCombo.IsEnabled = transparent && _blurSupported;
+        BlurPanel.IsEnabled = transparent && _blurSupported;
 
         // 边框在所有主题下都有意义（深色/浅色也能把边框藏起来），所以不置灰
         ScopeHint.Text = transparent
@@ -174,12 +150,14 @@ public partial class SettingsWindow : Window
         _preview();
     }
 
-    private void OnBlurChanged(object sender, SelectionChangedEventArgs e)
+    private void OnBlurOptionChanged(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        if (BlurCombo.SelectedItem is not ComboBoxItem item || item.Tag is not BlurMode mode) return;
 
-        _settings.Blur = mode;
+        _settings.Blur = BlurBlurRadio.IsChecked == true ? BlurMode.Blur
+                       : BlurAcrylicRadio.IsChecked == true ? BlurMode.Acrylic
+                       : BlurMode.None;
+
         _preview();
     }
 

@@ -80,9 +80,26 @@
 
         <TextBlock Text="背景模糊" FontWeight="SemiBold" Margin="0,18,0,0"
                    Style="{StaticResource LabelText}"/>
-        <ComboBox x:Name="BlurCombo" Width="140" HorizontalAlignment="Left" Margin="0,8,0,0"
-                  Foreground="{DynamicResource LabelBrush}"
-                  SelectionChanged="OnBlurChanged"/>
+        <!--
+            这里原先是个 ComboBox，但它有个绕不过去的毛病：
+            **下拉框本身和展开的列表在系统默认模板里都是白底**，
+            而本窗口是深色背景、文字也是浅色 —— 结果就是"白底白字"，什么都看不见。
+            下拉列表还是个独立弹出窗口，想让主题色跟进去必须整个重写控件模板，不值得。
+
+            反正只有 3 个固定选项，改用单选按钮：显示效果完全可控，
+            而且和上面「主题」那一行的交互方式一致。
+        -->
+        <StackPanel x:Name="BlurPanel" Orientation="Horizontal" Margin="0,8,0,0">
+            <RadioButton x:Name="BlurNoneRadio" Content="无" Margin="0,0,16,0"
+                         Foreground="{DynamicResource LabelBrush}"
+                         Checked="OnBlurOptionChanged"/>
+            <RadioButton x:Name="BlurBlurRadio" Content="模糊" Margin="0,0,16,0"
+                         Foreground="{DynamicResource LabelBrush}"
+                         Checked="OnBlurOptionChanged"/>
+            <RadioButton x:Name="BlurAcrylicRadio" Content="亚克力"
+                         Foreground="{DynamicResource LabelBrush}"
+                         Checked="OnBlurOptionChanged"/>
+        </StackPanel>
         <TextBlock x:Name="BlurHint" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
                    Foreground="{DynamicResource HintBrush}"/>
 
