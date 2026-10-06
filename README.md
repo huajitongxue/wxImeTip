@@ -18,14 +18,18 @@
 
 | 文件 | 大小 | 需要什么 |
 |---|---|---|
-| `ImeTip-vX.Y-portable.exe` | ~75 MB | **双击即用，什么都不用装** ← 推荐 |
-| `ImeTip-vX.Y.exe` | ~315 KB | 需要先装 .NET 10 桌面运行时 |
+| `ImeTip-portable.exe` | ~75 MB | **双击即用，什么都不用装** ← 推荐 |
+| `ImeTip.exe` | ~315 KB | 需要先装 .NET 10 桌面运行时 |
+
+> 附件名**不带版本号**，所以这条直链永远有效（版本号体现在 Release 标题上）：
+>
+> `https://github.com/huajitongxue/wxImeTip/releases/latest/download/ImeTip-portable.exe`
 
 > 第一次运行时 Windows 可能会拦一下（这个 exe 没买代码签名证书）——
 > 点「更多信息」→「仍要运行」即可。详见下面「第一次运行时可能遇到的提示」。
 
-**想发给别人**：直接把上面那个链接给他，或者把 `portable` 那个文件传给他都行，
-他那边什么都不用装。
+**想发给别人**：直接发上面那条直链（点开就下载，不用登录），或者把 `ImeTip-portable.exe`
+这个文件传给他都行 —— 他那边什么都不用装。
 
 ---
 
@@ -144,7 +148,36 @@ python tools/make-icon.py
 
 需要 Python + Pillow（`pip install pillow`）。**只在生成图标时需要，编译程序不需要。**
 
-需要 Python + Pillow（`pip install pillow`）。**只在生成图标时需要，编译程序不需要。**
+### 发布到 GitHub
+
+```bash
+# 1) 打标签（在 imetip-only 分支上，tagger 也要用昵称，否则真名会泄露）
+git -c user.name="huajitongxue" \
+    -c user.email="212742981+huajitongxue@users.noreply.github.com" \
+    tag -a v1.4 -m "..." imetip-only
+
+# 2) 先建 Release（不带附件，避开"建完立刻传"的瞬时 404）
+gh release create v1.4 --title "ImeTip v1.4 — Windows 10/11 · x64" --notes-file notes.md
+sleep 4
+
+# 3) 再单独上传附件 —— ⚠️ 文件名必须固定，不要带版本号
+gh release upload v1.4 "路径/ImeTip.exe#ImeTip.exe"
+gh release upload v1.4 "路径/ImeTip-portable.exe#ImeTip-portable.exe"
+```
+
+⚠️ **附件名一律不带版本号。** 这是硬约定，理由：
+
+README 里给的下载地址是 `releases/latest/download/<文件名>` 这种形式。
+`latest` 会自动指向最新 Release，但**后面的文件名是写死的** —— 只要附件名里
+带上版本号（`ImeTip-v1.4-portable.exe`），**发下一版的那一刻，之前分享出去的所有
+下载链接立刻 404**。
+
+> 踩过：v1.1~v1.3 最初的附件都带版本号，等于每发一版就把上一版分享出去的链接作废。
+> 现在（v1.3 起）已改成固定名，版本号只体现在标签和 Release 标题里。
+
+发布用的临时文件建议**先复制成 ASCII 名字**再上传，绕开中文路径可能带来的问题。
+另外这台机器上推送/上传要走本地代理（见项目笔记），且 `gh` 需带
+`HTTPS_PROXY=http://127.0.0.1:7890`。
 
 ### 两种发布方式
 
