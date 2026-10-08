@@ -80,8 +80,12 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern IntPtr GetForegroundWindow();
 
+    /// <summary>
+    /// 由窗口句柄取「所属线程 ID」和「所属进程 ID」。
+    /// 返回值是**线程 ID**，进程 ID 从 out 参数出来（这两个都常用到，一次调用一起拿）。
+    /// </summary>
     [DllImport("user32.dll")]
-    internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+    internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
     [DllImport("user32.dll")]
     internal static extern IntPtr GetKeyboardLayout(uint idThread);

@@ -289,4 +289,13 @@ README 里给的下载地址是 `releases/latest/download/<文件名>` 这种形
     （而且它只在"深色/透明主题"下才暴露，浅色主题下一切正常，很容易漏测）。
     想让下拉列表跟着主题走，得整个重写 `ItemContainerStyle` 的模板，不值得。
     **选项少（≤4 个）就直接用 `RadioButton`** —— 前景可控，还和主题选择那一行风格统一。
+14. **判断"前台是不是自己"要按进程比，不能只比窗口句柄**：
+    `ImeStateReader.Read` 原本只排除了悬浮窗本身（`hwnd == ownWindow`），
+    于是**点一下设置窗口，指示器就从「中」跳成「英」** ——
+    设置窗口刚创建、从没设置过输入法状态，它的 `IMC_GETOPENSTATUS` 只会返回 0，
+    被判成英文。这和"点任务栏"是**同一个毛病**（外壳窗口那段的注释早就写了这个规律），
+    只是窗口换成了自家的，而名单里只有系统外壳、没有自己的窗口。
+    改成用 `GetWindowThreadProcessId` 取进程 ID 跟 `Environment.ProcessId` 比，
+    一次把**所有**自家窗口排除掉 —— 以后再加第三个窗口也不用改代码。
+    ⚠️ 别搞混：`GetWindowThreadProcessId` 的**返回值是线程 ID**，进程 ID 要从 `out` 参数拿。
 

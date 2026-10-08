@@ -105,15 +105,30 @@ internal static class ImeStateReader
 
     /// <summary>
     /// 采样一次。
-    /// 返回 null 表示"本次不适用"（前台窗口就是自己、或压根没有前台窗口），
-    /// 调用方应当保持上一次的状态不变。
+    /// 返回 null 表示"本次不适用"，调用方应当保持上一次的状态不变。三种情况：
+    ///   ① 压根没有前台窗口
+    ///   ② 前台就是悬浮窗自己
+    ///   ③ 前台是本程序自己的其它窗口（设置窗口等）
     /// </summary>
     public static ImeState? Read(IntPtr ownWindow)
     {
         IntPtr hwnd = NativeMethods.GetForegroundWindow();
         if (hwnd == IntPtr.Zero || hwnd == ownWindow) return null;
 
-        uint tid = NativeMethods.GetWindowThreadProcessId(hwnd, IntPtr.Zero);
+        // 顺带把进程 ID 一起取出来（下面要用它判断"前台是不是自家窗口"）
+        uint tid = NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
+
+        // 本程序**自己**的其它窗口（设置窗口，以及以后可能加的对话框）同样不是"打字目标"。
+        //
+        // 症状和上面那段说的"点任务栏"一模一样，只是窗口换成了自家的：
+        // 设置窗口刚创建、从没设置过输入法状态，它所在线程的 IMC_GETOPENSTATUS
+        // 只会返回 0 → 被判成「英」。于是"点一下设置窗口，指示器就从『中』跳成『英』"。
+        //
+        // 这里按**进程**排除，而不是多加一个窗口句柄参数：
+        // 以后再加第三个窗口也不用改这里，而且调用方不必到处传自己的句柄。
+        // （上面那句 ownWindow 早退保留着 —— 悬浮窗是最常见的情况，能省一次系统调用。）
+        if (pid == (uint)Environment.ProcessId) return null;
+
         string title = DescribeWindow(hwnd, out string className);
 
         if (tid == 0)
