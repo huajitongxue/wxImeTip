@@ -293,4 +293,80 @@ internal static class NativeMethods
     /// <summary>取得该窗口所属线程的默认 IME 窗口。跨进程读状态要靠它当"传话筒"。</summary>
     [DllImport("imm32.dll")]
     internal static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+
+    // ───────────── oleacc.dll（无障碍：取文本插入点）─────────────
+    //
+    // 用途见 CaretLocator.cs。只对 Chromium / Electron 类程序有效
+    // （目前实测过能拿到的是 Cherry Studio）；拿不到就由调用方退回"鼠标旁边"。
+
+    /// <summary>要求窗口交出某个无障碍对象。唤醒 Chromium 的无障碍树靠它。</summary>
+    internal const uint WM_GETOBJECT = 0x003D;
+
+    /// <summary>无障碍对象 ID：文本插入点。传给 AccessibleObjectFromWindow。</summary>
+    internal const int OBJID_CARET = unchecked((int)0xFFFFFFF8);
+
+    /// <summary>IID_IAccessible = {618736E0-3C3D-11CF-810C-00AA00389B71}。</summary>
+    internal static readonly Guid IID_IAccessible = new("618736E0-3C3D-11CF-810C-00AA00389B71");
+
+    /// <summary>
+    /// 由窗口句柄取指定的无障碍对象。
+    ///
+    /// ⚠️ **必须传顶层窗口句柄** —— 实测传 Chromium 的渲染子窗口（Chrome_RenderWidgetHostHWND）
+    ///    只会返回 S_FALSE，传顶层窗口才拿得到。
+    ///
+    /// 返回的是**原始接口指针**，不是托管接口，这是刻意的：
+    ///   · 用 `dynamic` 调 COM          → 实测抛 PlatformNotSupportedException
+    ///   · 用 `[ComImport]` + Interface → 实测抛 InvalidCastException
+    ///   两种"更体面"的写法都走不通，只有拿指针直调 vtable 这条路是通的。
+    /// 调用方用完必须 Marshal.Release。
+    /// </summary>
+    [DllImport("oleacc.dll")]
+    internal static extern int AccessibleObjectFromWindow(
+        IntPtr hwnd, int dwId, ref Guid riid, out IntPtr ppvObject);
+
+    /// <summary>
+    /// IAccessible 的 get_accChildCount（vtable 0-based 槽 8）。
+    /// 它是整个接口里**唯一不需要 VARIANT 参数**的方法，所以拿来当"接口到底能不能用"的探针。
+    /// </summary>
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int GetChildCountFn(IntPtr pThis, out int pcountChildren);
+
+    /// <summary>
+    /// IAccessible 的 accLocation（vtable 0-based 槽 22）：取元素在屏幕上的位置。
+    /// varChild 必须是**按值传**的 VARIANT，见下面结构体的说明。
+    /// </summary>
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    internal delegate int AccLocationFn(
+        IntPtr pThis, out int pxLeft, out int pyTop, out int pcxWidth, out int pcyHeight,
+        VARIANT varChild);
+
+    /// <summary>
+    /// 只用到 vt / lVal 两个字段的极简 VARIANT。
+    ///
+    /// ⚠️ 必须**手工指定内存布局**：把它声明成 `object` 交给封送层，传过去的形态不受
+    ///    我们控制，对方会回 E_INVALIDARG(0x80070057)。
+    ///
+    /// ⚠️ Size = 24 是 **x64** 的值（8 字节头 + 16 字节 union，union 里最大的是 DECIMAL）。
+    ///    x86 下应为 16。本项目只发布 win-x64；CaretLocator 里有进程位数检查兜底。
+    ///    （lVal 的偏移量 8 在 x86 / x64 下都成立。）
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    internal struct VARIANT
+    {
+        [FieldOffset(0)] public ushort vt;   // VT_I4 = 3
+        [FieldOffset(8)] public int lVal;    // CHILDID_SELF = 0
+    }
+
+    internal delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
+
+    /// <summary>
+    /// 枚举子窗口（会递归到所有后代）。
+    ///
+    /// ⚠️ 这个回调**不需要**用静态字段存住 —— 它是同步阻塞调用，委托在调用期间
+    ///    一直活在调用栈上，不可能被 GC 回收。（HotkeyManager 那种"被操作系统
+    ///    稍后异步回调"的才必须静态保存。）
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool EnumChildWindows(
+        IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
 }

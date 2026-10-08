@@ -44,7 +44,7 @@
 | 左键点托盘图标 | 显示 / 隐藏悬浮窗 |
 | 右键点托盘图标 | 弹出**同一个**菜单 |
 | **鼠标悬停小方块** | 显示原始数据（**默认关闭**，在设置窗口的「诊断」里打开） |
-| **按一下 Ctrl** | 把方框召到鼠标旁边（详见下方「快捷键」） |
+| **按一下 Ctrl** | 把方框召到鼠标旁边，或输入框插入点上方（见下方「快捷键」） |
 
 菜单项：`显示悬浮窗`(勾选) / `深色主题` / `浅色主题` / `透明主题` / `开机自启`(勾选) / `设置…` / `退出`。
 
@@ -69,128 +69,9 @@
 所以 Ctrl+C 复制、Ctrl+滚轮 缩放都不会让方框乱跳。
 不想要它可以在设置里关掉，关掉后程序会**彻底卸载键盘钩子**，一个按键都不监听。
 
----
-
-## 开发
-
-### 环境
-- .NET SDK（当前用 10.0.x）
-- 任意编辑器（VS Code 即可）
-
-### 常用命令
-```bash
-dotnet run                          # 编译并运行
-dotnet build                        # 只编译
-dotnet publish -c Release -r win-x64 --self-contained false \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o 发布
-```
-最后一条生成 `发布\ImeTip.exe`。
-
-> VS Code 里可以直接按 `Ctrl+Shift+B`（仓库根目录 `.vscode/tasks.json` 已配好）。
-> **不要按 F5 调试** —— 会触发 C# Dev Kit 的微软账号授权检查并报 vsdbg 错误。
-
-### 文件说明
-| 文件 | 作用 |
-|---|---|
-| `NativeMethods.cs` | **所有** Win32 API 声明集中在这里 |
-| `ImeStateReader.cs` | 读取输入法状态的核心逻辑（与界面完全解耦） |
-| `Theme.cs` | 主题配色表（深色 / 浅色 / 透明三套，改配色只改这里） |
-| `AppMenu.cs` | 右键菜单（两套菜单同源构建 + 从 NOACTIVATE 窗口弹出的前台处理） |
-| `WindowEffects.cs` | 背景模糊/亚克力的封装（含"失败就降级"的容错，改用公开 API 会失效） |
-| `SettingsWindow.xaml(.cs)` | 设置窗口（透明度滑杆、边框/描边开关、模糊选择） |
-| `MainWindow.xaml(.cs)` | 悬浮窗界面与交互 |
-| `TrayIcon.cs` | 托盘图标（三档随输入法状态切换；菜单由 AppMenu 注入） |
-| `HotkeyManager.cs` | 全局快捷键（低级键盘钩子；目前是"单独按一下 Ctrl 召唤方框"） |
-| `icon.svg` / `icon.ico` | 程序图标（**由 `tools/make-icon.py` 生成，别手改**） |
-| `assets/tray-*.ico` | 托盘图标三档：中 / 英 / 读不到（同样由脚本生成） |
-| `tools/make-icon.py` | 生成图标的脚本（想换图标就改它再重跑） |
-| `AppSettings.cs` | 设置持久化（`%APPDATA%\ImeTip\settings.json`） |
-| `StartupManager.cs` | 开机自启（写 `HKCU\...\Run`） |
-| `DiagnosticsLog.cs` | 诊断日志 |
-| `ImeStateProbe.cs` | `--probe` 诊断模式 |
-| `使用说明.md` | **面向使用者**的说明（每次 publish 自动复制到输出目录并改名 `README.md`） |
-
-### 换图标
-
-图标不是画好的图片，而是**由一个脚本生成的**：
-
-```bash
-python tools/make-icon.py
-```
-
-它产出两套图，各有各的用途：
-
-| 产物 | 用途 |
-|---|---|
-| `icon.svg` | 程序图标的矢量源文件（想编辑或放到别处用就改它） |
-| `icon.ico` | 程序图标，8 档尺寸（16/20/24/32/48/64/128/256） |
-| `assets/tray-zh.ico` | 托盘图标·中文档（青绿「中」） |
-| `assets/tray-en.ico` | 托盘图标·英文档（琥珀「E」） |
-| `assets/tray-unknown.ico` | 托盘图标·读不到档（灰「?」） |
-
-**为什么是两套而不是一套？** 因为它们的性质根本不同：
-
-- **程序图标（exe）是静态的** —— 它写在 PE 文件里，运行时没有任何办法改。所以做成
-  "中英并列"（左青绿「中」、右琥珀「英」），用一个静态图形交代它管的是两种状态。
-- **托盘图标是动态的** —— 程序随时能换，所以做成三档，跟着输入法状态实时切换。
-
-想调配色或形状，改脚本顶部的「设计参数」再重跑即可。
-
-脚本里有三个容易忽略但很关键的细节（都写在文件开头的注释里）：
-
-- **小尺寸会光学补偿**：16px 下「中」字只剩 7 个像素高，所以小图标里的字会相对放大，
-  和大图标不是同一套比例。
-- **`anchor="mm"` 并不真的居中**：实测微软雅黑会偏下约 4.4%，脚本对每个字**分别**
-  量一次墨迹范围再补偿（「中」「英」「E」「?」的偏移量各不相同，不能共用）。
-- **托盘的英文档用拉丁字母「E」而不是汉字「英」**：实测 20px 下「英」有 9 个笔画，
-  挤在一起根本认不出；「E」只有 4 笔，同样尺寸下清晰得多。颜色（琥珀）本身已经
-  承担了主要的区分作用，字形只需要让人确认一下。
-
-需要 Python + Pillow（`pip install pillow`）。**只在生成图标时需要，编译程序不需要。**
-
-### 发布到 GitHub
-
-```bash
-# 1) 打标签（在 imetip-only 分支上，tagger 也要用昵称，否则真名会泄露）
-git -c user.name="huajitongxue" \
-    -c user.email="212742981+huajitongxue@users.noreply.github.com" \
-    tag -a v1.4 -m "..." imetip-only
-
-# 2) 先建 Release（不带附件，避开"建完立刻传"的瞬时 404）
-gh release create v1.4 --title "ImeTip v1.4 — Windows 10/11 · x64" --notes-file notes.md
-sleep 4
-
-# 3) 再单独上传附件 —— ⚠️ 文件名必须固定，不要带版本号
-gh release upload v1.4 "路径/ImeTip.exe#ImeTip.exe"
-gh release upload v1.4 "路径/ImeTip-portable.exe#ImeTip-portable.exe"
-```
-
-⚠️ **附件名一律不带版本号。** 这是硬约定，理由：
-
-README 里给的下载地址是 `releases/latest/download/<文件名>` 这种形式。
-`latest` 会自动指向最新 Release，但**后面的文件名是写死的** —— 只要附件名里
-带上版本号（`ImeTip-v1.4-portable.exe`），**发下一版的那一刻，之前分享出去的所有
-下载链接立刻 404**。
-
-> 踩过：v1.1~v1.3 最初的附件都带版本号，等于每发一版就把上一版分享出去的链接作废。
-> 现在（v1.3 起）已改成固定名，版本号只体现在标签和 Release 标题里。
-
-发布用的临时文件建议**先复制成 ASCII 名字**再上传，绕开中文路径可能带来的问题。
-另外这台机器上推送/上传要走本地代理（见项目笔记），且 `gh` 需带
-`HTTPS_PROXY=http://127.0.0.1:7890`。
-
-### 两种发布方式
-
-| 命令 | 产物 | 体积 | 适用 |
-|---|---|---|---|
-| `--self-contained false` | `发布\ImeTip.exe` | ~190 KB | 自己用；对方需装 .NET 10 桌面运行时 |
-| `--self-contained true` | `发布-免安装\ImeTip.exe` | ~72 MB | **发给别人**；对方什么都不用装 |
-
-免安装版加 `-p:EnableCompressionInSingleFile=true` 可显著减小体积。
-（WPF **不支持** `PublishTrimmed` 裁剪，72 MB 已是合理下限。）
-
-发给别人时只需要 `ImeTip.exe` + `README.md` 两个文件，
-`ImeTip.pdb` 是调试符号，可以不带。
+**召到哪里可以选**：默认是鼠标旁边；也可以改成"输入框里那根闪烁竖线"的正上方。
+后者目前**只对 Cherry Studio 生效** —— 它靠系统的无障碍接口拿光标位置，多数程序不提供；
+**取不到时自动退回鼠标旁边**，所以最坏情况就是和默认一样。
 
 ---
 
@@ -227,75 +108,7 @@ README 里给的下载地址是 `releases/latest/download/<文件名>` 这种形
 
 ---
 
-## 实现要点（踩过的坑）
+## 想接着开发？
 
-1. **跨进程读取**：`ImmGetContext` 只对本线程的窗口有效，读别的进程必须改用
-   `ImmGetDefaultIMEWnd` + `SendMessage(WM_IME_CONTROL, ...)`。
-2. **判定中文必须同时看两个值**：
-   `opened = IMC_GETOPENSTATUS` 且 `convMode & IME_CMODE_NATIVE`。
-   **只看 convMode 会完全判错** —— 输入法关闭（英文直通）时 convMode 仍可能等于 1。
-3. **Windows 11 记事本**（WinUI3）顶层窗口永远报 `opened=0`，
-   需要改问"真正持有键盘焦点的子窗口"。
-4. **`WS_EX_NOACTIVATE`** 是命门：没有它，一拖动自己就抢走焦点，
-   读到的永远是自己的状态。但加了它之后必须处理 `WM_MOVING`，否则拖动会"松手才跳"。
-5. **状态判定链里的每个 `return` 都在抢答**：越"不管什么情况都成立"的规则越要排前面。
-6. **从 `WS_EX_NOACTIVATE` 窗口弹菜单，必须先自己抢前台**：
-   WinForms 下拉菜单只有在本进程是前台窗口时才会"点外面自动关闭"。
-   托盘菜单一直正常是因为 `NotifyIcon` 内部替我们调了 `SetForegroundWindow` —— 这一步对调用方是隐形的。
-   悬浮窗是 NOACTIVATE 窗口，右键不会激活它，必须自己补：
-   记前台 → `SetForegroundWindow` → `Show(Cursor.Position)` → `PostMessage(WM_NULL)`；
-   菜单关闭后在 `Closed` 里**把前台还给用户**，否则等于偷走了他正在打字的窗口焦点。
-   另外右键必须绑 **`MouseRightButtonUp`**：菜单弹出时会抓取鼠标，
-   紧接的"抬起"若落在菜单上会把刚弹出的菜单立刻关掉。
-7. **切主题后要重贴当前文字颜色**：不补这一步，"中"字会停在旧主题的颜色上，
-   直到用户下次切换输入法才更新 —— 而他可能半天都不切。
-8. **想给窗口加模糊，就不能用 `AllowsTransparency="True"`**：
-   它会让窗口变成分层窗口（`WS_EX_LAYERED`），而分层窗口会挡住 DWM 的合成效果。
-   替代方案是 `HwndSource.CompositionTarget.BackgroundColor = Colors.Transparent`
-   （同样得到透明背景，但不与合成打架）。圆角继续靠 `Border.CornerRadius` 自己画。
-9. **Win11 官方的系统背景材质对"永不激活"的窗口必然退化成纯色**：
-   官方文档明确"应用窗口停用"会回退成纯色，而本窗口为了不抢焦点是故意永不激活的。
-   所以模糊只能走未公开的 `SetWindowCompositionAttribute`（唯一在失焦态仍有效的路径，
-   TranslucentTB 也是用它），并且**必须假设它会失败** —— 失败就安静降级成纯透明。
-10. **exe 图标不可能动态，托盘图标可以** —— 这两件事经常被混为一谈。
-    exe 图标写在 PE 文件里，Windows 只在文件本身变化时才重新读取，
-    运行时**没有任何 API 能改它**。所以"图标跟随输入法状态"这件事，
-    只能由托盘图标来实现（原代码注释里那句"方便以后按状态换颜色"就是为这个留的口子）。
-    托盘三档图标作为嵌入资源读入（`GetManifestResourceStream` + `new Icon(stream, size)`），
-    三个细节：
-    · 资源名是"根命名空间 + 相对路径（斜杠换成点）"，用 `typeof(TrayIcon).Namespace`
-      拼出来，项目改名也不会失效。
-    · 取尺寸用 `SystemInformation.SmallIconSize` 而**不是写死 16** ——
-      高 DPI 下它是 20 或 24，写死 16 会被系统放大、发虚。
-    · **切换时绝不能 Dispose 掉正在用的那个 Icon** —— 托盘会立刻变成一块空白。
-      三个图标在构造时加载一次、之后反复复用，只在最后统一释放；
-      赋值前还要做一次引用比对，同一个图标反复设置会让托盘闪一下。
-11. **全局快捷键要用低级键盘钩子（`WH_KEYBOARD_LL`），不能用 `RegisterHotKey`**：
-    后者只能注册组合键（没法单独注册一个 Ctrl），而且注册后这个键就被本程序独占了 ——
-    Ctrl+C 复制会直接失效。低级钩子只是"旁听"，按键照常传给原来的程序。
-    三条硬规矩，违反任何一条都会让整个系统的键盘变卡或程序直接崩：
-    · **回调里只做判断，绝不做耗时的事**。系统对低级钩子有超时限制（约 300ms），
-      超时会把钩子摘掉。要干活就 `Dispatcher.BeginInvoke` 丢给消息队列异步做。
-    · **回调委托必须用静态字段存住**。只传局部变量的话，GC 一回收，
-      系统就回调到一个已释放的地址 → 进程崩溃（而且这种崩溃极难查）。
-    · **回调整体包 try/catch**。托管异常穿透到系统的钩子链里是未定义行为。
-    另外 `WH_KEYBOARD_LL`（LL = low level）**不需要注入 DLL**，所以托管代码能直接用；
-    普通的 `WH_KEYBOARD` 要往所有进程注入 DLL，.NET 做不到。
-12. **"单独按一下 Ctrl"不需要计时器**：用一个状态机就够了 ——
-    按下 Ctrl 打标记 → 中途按了别的键就把标记作废 → Ctrl 松开时标记还在才算数。
-    **零延迟**（松开那一刻立刻知道结果），也自然避开了 Ctrl+C / Ctrl+滚轮 这类组合键。
-13. **设置窗口里别用 `ComboBox`**：它的下拉框和展开的列表在系统默认模板里**都是白底**，
-    而这个窗口是深色背景。给控件设浅色前景 → **白底白字，完全看不见**
-    （而且它只在"深色/透明主题"下才暴露，浅色主题下一切正常，很容易漏测）。
-    想让下拉列表跟着主题走，得整个重写 `ItemContainerStyle` 的模板，不值得。
-    **选项少（≤4 个）就直接用 `RadioButton`** —— 前景可控，还和主题选择那一行风格统一。
-14. **判断"前台是不是自己"要按进程比，不能只比窗口句柄**：
-    `ImeStateReader.Read` 原本只排除了悬浮窗本身（`hwnd == ownWindow`），
-    于是**点一下设置窗口，指示器就从「中」跳成「英」** ——
-    设置窗口刚创建、从没设置过输入法状态，它的 `IMC_GETOPENSTATUS` 只会返回 0，
-    被判成英文。这和"点任务栏"是**同一个毛病**（外壳窗口那段的注释早就写了这个规律），
-    只是窗口换成了自家的，而名单里只有系统外壳、没有自己的窗口。
-    改成用 `GetWindowThreadProcessId` 取进程 ID 跟 `Environment.ProcessId` 比，
-    一次把**所有**自家窗口排除掉 —— 以后再加第三个窗口也不用改代码。
-    ⚠️ 别搞混：`GetWindowThreadProcessId` 的**返回值是线程 ID**，进程 ID 要从 `out` 参数拿。
-
+构建方式、发布流程、文件说明、以及一路踩过的坑，都在 [`开发笔记.md`](开发笔记.md)。
+这份 README 只讲"这是什么、怎么用"。

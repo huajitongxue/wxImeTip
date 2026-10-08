@@ -110,12 +110,26 @@
         -->
         <TextBlock Text="快捷键" FontWeight="SemiBold" Margin="0,18,0,0"
                    Style="{StaticResource LabelText}"/>
-        <CheckBox x:Name="SummonHotkeyCheck" Content="按一下 Ctrl，把方框召到鼠标旁边" Margin="0,8,0,0"
+        <CheckBox x:Name="SummonHotkeyCheck" Content="按一下 Ctrl，召唤悬浮窗" Margin="0,8,0,0"
                   Foreground="{DynamicResource LabelBrush}"
                   Checked="OnHotkeyOptionChanged" Unchecked="OnHotkeyOptionChanged"/>
+
+        <!--
+            召到哪里。两个选项互斥，所以用单选按钮 —— 和上面「主题」「背景模糊」的交互方式一致。
+            ⚠️ 同样必须**逐个**显式指定 Foreground：RadioButton 不继承窗口前景色，
+               不写的话在深色主题下会变成"深底黑字"，完全看不见（实测踩过的坑）。
+        -->
+        <StackPanel x:Name="SummonTargetPanel" Orientation="Horizontal" Margin="24,8,0,0">
+            <RadioButton x:Name="SummonCursorRadio" Content="鼠标旁边" Margin="0,0,16,0"
+                         Foreground="{DynamicResource LabelBrush}"
+                         Checked="OnSummonTargetChanged"/>
+            <RadioButton x:Name="SummonCaretRadio" Content="输入框插入点上方"
+                         Foreground="{DynamicResource LabelBrush}"
+                         Checked="OnSummonTargetChanged"/>
+        </StackPanel>
         <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
                    Foreground="{DynamicResource HintBrush}"
-                   Text="只认「单独按一下 Ctrl」：中途按了别的键就不算数。所以 Ctrl+C 复制、Ctrl+滚轮 缩放都不会让方框乱跳。关掉时程序会彻底卸载键盘钩子，一个按键都不再监听。"/>
+                   Text="只认「单独按一下 Ctrl」：中途按了别的键就不算数，所以 Ctrl+C 复制、Ctrl+滚轮 缩放都不会让方框乱跳。选「输入框插入点」时只对 Cherry Studio 生效 —— 其它程序、或当下光标不在输入框里，都会自动退回鼠标旁边。取消上面那个勾时程序会彻底卸载键盘钩子，一个按键都不再监听。"/>
 
         <!--
             ═══════════ 诊断 ═══════════

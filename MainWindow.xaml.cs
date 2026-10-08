@@ -209,7 +209,7 @@ public partial class MainWindow : Window
         _tray = new TrayIcon(_appMenu.TrayMenu, ToggleVisibility);
 
         // 全局快捷键。钩子是否真的装上由设置决定（见 SyncHotkeyState）。
-        _hotkeys = new HotkeyManager(SummonToCursor);
+        _hotkeys = new HotkeyManager(Summon);
         SyncHotkeyState();
 
         DiagnosticsLog.Write(
@@ -218,6 +218,7 @@ public partial class MainWindow : Window
             $"边框={(_settings.ShowCardBorder ? "显示" : "隐藏")} 描边={(_settings.TextOutline ? "开" : "关")} " +
             $"模糊={_settings.Blur} 玻璃框={(_glassFrameOk ? "成功" : "失败")} " +
             $"快捷键Ctrl召唤={(_settings.HotkeySummonEnabled ? "开" : "关")} " +
+            $"召唤目标={_settings.SummonTarget} " +
             $"开机自启={StartupManager.IsEnabled()} ===");
 
         Refresh();
@@ -496,37 +497,90 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 把悬浮窗召到鼠标光标正上方（水平居中对齐），像"叫过来"一样。
+    /// 「单独按一下 Ctrl」的入口。
     ///
     /// 想解决的麻烦：平时方框放在屏幕边缘不碍事，可真要打字时它又太远，
     /// 得用鼠标把它"拽"到输入框旁边 —— 这一下既打断思路又要瞄准。
-    /// 现在鼠标停在输入框上、按一下 Ctrl，方框就自己过来了。
+    /// 按一下 Ctrl，方框就自己过来了。
     ///
-    /// 全程用**物理像素**坐标：GetCursorPos / GetWindowRect / SetWindowPos 都是物理像素，
-    /// 一律不掺 WPF 的逻辑坐标 —— 少一次 DPI 换算就少一个出错的地方。
+    /// 召到哪里由设置 <see cref="AppSettings.SummonTarget"/> 决定：
+    ///   · Cursor（默认）—— 鼠标光标正上方；
+    ///   · Caret —— 输入框里闪烁的插入点正上方。这个**只有 Cherry Studio 取得到**，
+    ///     其它程序、或当下拿不到插入点时，一律自动退回鼠标位置 ——
+    ///     所以最坏情况就是"和默认一样"，不会出错。
+    ///
+    /// 全程用**物理像素**坐标：GetCursorPos / GetWindowRect / accLocation / SetWindowPos
+    /// 全是物理像素，一律不掺 WPF 的逻辑坐标 —— 少一次 DPI 换算就少一个出错的地方。
     /// 窗口尺寸也从 GetWindowRect 现取，而不是用 Width/Height 属性
     /// （那是逻辑值，在 125% / 150% 缩放下跟物理像素对不上）。
     ///
     /// ⚠️ 刻意**不调 SavePosition()**：用户希望"记住的位置"仍然是他手动拖到的那个，
     ///    按 Ctrl 只是临时召唤一下。所以移动完就完事，不写配置文件。
     /// </summary>
-    private void SummonToCursor()
+    private void Summon()
     {
         if (_hwnd == IntPtr.Zero) return;
         if (!IsVisible) return;              // 已经收进托盘了就别乱动
 
-        if (!NativeMethods.GetCursorPos(out NativeMethods.POINT cursor)) return;
         if (!NativeMethods.GetWindowRect(_hwnd, out NativeMethods.RECT box)) return;
 
         int w = box.Right - box.Left;
         int h = box.Bottom - box.Top;
 
-        // 鼠标指针自己就有高度（约 20px），这里再留一点空隙，
-        // 免得方框压住指针，或者压住正在输入的那一行字。
+        if (_settings.SummonTarget == SummonTarget.Caret)
+        {
+            if (CaretLocator.TryGetCaretRect(out NativeMethods.RECT caret, out string caretDetail))
+            {
+                // 插入点是一条 1×25 的竖线：水平取竖线中心，垂直取竖线**顶端**，
+                // 让整条竖线都落在方框下边（和"鼠标正上方"是同一个方向）。
+                PlaceNear(caret.Left + (caret.Right - caret.Left) / 2,
+                          aboveY: caret.Top, belowY: caret.Bottom,
+                          w, h, caretDetail);
+                return;
+            }
+
+            // 拿不到插入点（非目标程序 / 光标不在输入框 / 接口失败……）→ 退回鼠标，
+            // 并把原因带进日志，免得"为什么没生效"只能靠猜。
+            if (!TryCursorAnchor(out int fallbackX, out int fallbackY)) return;
+            PlaceNear(fallbackX, aboveY: fallbackY, belowY: fallbackY,
+                      w, h, $"鼠标（退回：{caretDetail}）");
+            return;
+        }
+
+        if (!TryCursorAnchor(out int x, out int y)) return;
+        PlaceNear(x, aboveY: y, belowY: y, w, h, "鼠标");
+    }
+
+    /// <summary>取鼠标位置（物理像素）。失败返回 false —— 极少发生。</summary>
+    private static bool TryCursorAnchor(out int x, out int y)
+    {
+        if (!NativeMethods.GetCursorPos(out NativeMethods.POINT p))
+        {
+            x = y = 0;
+            return false;
+        }
+
+        x = p.X;
+        y = p.Y;
+        return true;
+    }
+
+    /// <summary>
+    /// 把方框摆到锚点 <paramref name="centerX"/> **正上方**并水平居中，
+    /// 上方放不下就翻到下方，最后夹进虚拟屏幕。
+    ///
+    /// 参数全是物理像素。鼠标场景传 <c>aboveY == belowY == 鼠标 Y</c>；
+    /// 插入点场景传 <c>aboveY = 竖线顶端、belowY = 竖线底端</c>。
+    /// </summary>
+    private void PlaceNear(
+        int centerX, int aboveY, int belowY, int w, int h, string detail)
+    {
+        // 锚点自己就有高度（鼠标指针约 20px，插入点通常也在 20px 以上），
+        // 这里再留一点空隙，免得方框压住它、或者压住正在输入的那一行字。
         const int gap = 28;
 
-        int left = cursor.X - w / 2;         // 水平居中于鼠标
-        int top = cursor.Y - h - gap;        // 落在鼠标正上方
+        int left = centerX - w / 2;          // 水平居中于锚点
+        int top = aboveY - h - gap;          // 落在锚点正上方
 
         // ── 屏幕边界处理 ──
         // 用"虚拟屏幕"（所有显示器拼起来的并集）而不是主屏，多显示器时左上角可能是负数。
@@ -535,8 +589,8 @@ public partial class MainWindow : Window
         int screenW = NativeMethods.GetSystemMetrics(NativeMethods.SM_CXVIRTUALSCREEN);
         int screenH = NativeMethods.GetSystemMetrics(NativeMethods.SM_CYVIRTUALSCREEN);
 
-        // 鼠标贴着屏幕顶部时，上方根本放不下 → 改放到鼠标下方
-        if (top < screenTop) top = cursor.Y + gap;
+        // 锚点贴着屏幕顶部时，上方根本放不下 → 改放到锚点下方
+        if (top < screenTop) top = belowY + gap;
 
         // 水平方向也夹进屏幕内，免得跑出可视范围
         left = Math.Clamp(left, screenLeft, Math.Max(screenLeft, screenLeft + screenW - w));
@@ -550,8 +604,7 @@ public partial class MainWindow : Window
         if (_summonCount < 3)
         {
             _summonCount++;
-            DiagnosticsLog.Write(
-                $"Ctrl 快捷召唤 #{_summonCount} → 鼠标({cursor.X},{cursor.Y})，方框移到({left},{top})");
+            DiagnosticsLog.Write($"Ctrl 快捷召唤 #{_summonCount} → {detail}，方框移到({left},{top})");
         }
     }
 
@@ -627,6 +680,12 @@ public partial class MainWindow : Window
     private void Refresh()
     {
         _tickCount++;
+
+        // 开着「召到插入点」时，趁轮询的空档先把目标程序的无障碍树唤醒。
+        // 不预热的话，冷启动第一次按 Ctrl 会因为"刚唤醒还没就绪"而拿不到插入点。
+        // （只在第一次和每 5 秒真正发消息，平时就是几个整数比较，开销可忽略。）
+        if (_settings.SummonTarget == SummonTarget.Caret)
+            CaretLocator.WarmupIfNeeded();
 
         ImeState? state = ImeStateReader.Read(_hwnd);
 

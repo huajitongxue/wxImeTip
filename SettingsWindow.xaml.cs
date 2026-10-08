@@ -81,6 +81,8 @@ public partial class SettingsWindow : Window
         OutlineCheck.IsChecked = _settings.TextOutline;
 
         SummonHotkeyCheck.IsChecked = _settings.HotkeySummonEnabled;
+        SummonCursorRadio.IsChecked = _settings.SummonTarget == SummonTarget.Cursor;
+        SummonCaretRadio.IsChecked = _settings.SummonTarget == SummonTarget.Caret;
 
         DebugTipCheck.IsChecked = _settings.ShowDebugTooltip;
 
@@ -120,6 +122,9 @@ public partial class SettingsWindow : Window
         ScopeHint.Text = transparent
             ? string.Empty
             : "以上「不透明度 / 文字描边 / 背景模糊」只对「透明」主题生效，其余主题已置灰。";
+
+        // 快捷键整个关掉时，"召到哪里"就无从谈起了 → 置灰
+        SummonTargetPanel.IsEnabled = SummonHotkeyCheck.IsChecked == true;
     }
 
     private void OnThemeChecked(object sender, RoutedEventArgs e)
@@ -177,6 +182,24 @@ public partial class SettingsWindow : Window
         if (_loading) return;
 
         _settings.HotkeySummonEnabled = SummonHotkeyCheck.IsChecked == true;
+        RefreshScopeState();       // 勾掉快捷键时，"召到哪里"也要跟着置灰
+        _hotkeyChanged();
+    }
+
+    /// <summary>
+    /// 召唤目标：鼠标旁边 / 输入框插入点上方。
+    ///
+    /// 复用 <c>hotkeyChanged</c> 回调（它会 SyncHotkeyState + 落盘）——
+    /// 切换目标不需要装卸键盘钩子（TryStart 是幂等的），但必须立刻存下来。
+    /// </summary>
+    private void OnSummonTargetChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+
+        _settings.SummonTarget = SummonCaretRadio.IsChecked == true
+            ? SummonTarget.Caret
+            : SummonTarget.Cursor;
+
         _hotkeyChanged();
     }
 

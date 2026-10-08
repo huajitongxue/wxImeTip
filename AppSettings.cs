@@ -4,6 +4,20 @@ using System.Text.Json.Serialization;
 
 namespace ImeTip;
 
+/// <summary>「单独按一下 Ctrl」时，把悬浮窗召到哪里。</summary>
+internal enum SummonTarget
+{
+    /// <summary>鼠标光标正上方。所有程序通用，也是**默认值**。</summary>
+    Cursor = 0,
+
+    /// <summary>
+    /// 输入框里那个闪烁的竖线（文本插入点）正上方。
+    /// 目前只有 Cherry Studio 能取到插入点；其它程序、或当下拿不到时，
+    /// 会自动退回 <see cref="Cursor"/> —— 所以最坏情况就是保持原样。
+    /// </summary>
+    Caret = 1,
+}
+
 /// <summary>
 /// 程序设置。存到 %APPDATA%\ImeTip\settings.json。
 ///
@@ -55,6 +69,16 @@ internal sealed class AppSettings
     /// 一个按键都不再监听，比"留着钩子加个开关"更干净。
     /// </summary>
     public bool HotkeySummonEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 召到哪里：鼠标旁 / 输入框插入点上方。
+    ///
+    /// 默认 <see cref="SummonTarget.Cursor"/> —— 与改造前一模一样。
+    /// 枚举第一个值取 0，是为了让**旧配置文件**（压根没有这个字段）反序列化后
+    /// 落在默认值上，老用户升级后行为不变。
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SummonTarget SummonTarget { get; set; } = SummonTarget.Cursor;
 
     // ───────── 诊断 ─────────
 
