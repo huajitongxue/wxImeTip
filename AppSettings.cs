@@ -56,6 +56,20 @@ internal sealed class AppSettings
     /// </summary>
     public bool HotkeySummonEnabled { get; set; } = true;
 
+    // ───────── 诊断 ─────────
+
+    /// <summary>
+    /// 鼠标悬停在悬浮窗上时，是否显示"这一次读取到的全部原始数据"
+    /// （模式、命中的规则、原始句柄、刷新计数……）。
+    ///
+    /// 默认**关闭**：这东西是排查问题时用的。正常使用时鼠标扫过方框就弹出一大段
+    /// 原始数据，反而碍事（还容易被误当成"程序出问题了"），只在怀疑
+    /// "显示的状态不对"时才需要打开。
+    ///
+    /// 和下面几个字段一样带默认值，旧配置缺这一项时自动取 false。
+    /// </summary>
+    public bool ShowDebugTooltip { get; set; }
+
     private static string FolderPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ImeTip");
 

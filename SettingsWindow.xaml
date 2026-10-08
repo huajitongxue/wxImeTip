@@ -117,6 +117,20 @@
                    Foreground="{DynamicResource HintBrush}"
                    Text="只认「单独按一下 Ctrl」：中途按了别的键就不算数。所以 Ctrl+C 复制、Ctrl+滚轮 缩放都不会让方框乱跳。关掉时程序会彻底卸载键盘钩子，一个按键都不再监听。"/>
 
+        <!--
+            ═══════════ 诊断 ═══════════
+            排查问题用的开关都放这里，默认一律关闭 ——
+            正常使用时不需要，开着反而添乱。
+        -->
+        <TextBlock Text="诊断" FontWeight="SemiBold" Margin="0,18,0,0"
+                   Style="{StaticResource LabelText}"/>
+        <CheckBox x:Name="DebugTipCheck" Content="鼠标悬停时显示原始数据" Margin="0,8,0,0"
+                  Foreground="{DynamicResource LabelBrush}"
+                  Checked="OnOptionChanged" Unchecked="OnOptionChanged"/>
+        <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"
+                   Foreground="{DynamicResource HintBrush}"
+                   Text="打开后，鼠标扫过小方块会弹出一大段读取到的原始数据（模式、命中的规则、原始句柄、刷新计数等）。只在怀疑「显示的状态对不对」时才需要。"/>
+
         <TextBlock x:Name="ScopeHint" TextWrapping="Wrap" Margin="0,16,0,0" FontSize="12"
                    Foreground="{DynamicResource HintBrush}"/>
     </StackPanel>

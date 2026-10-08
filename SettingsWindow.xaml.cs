@@ -82,6 +82,8 @@ public partial class SettingsWindow : Window
 
         SummonHotkeyCheck.IsChecked = _settings.HotkeySummonEnabled;
 
+        DebugTipCheck.IsChecked = _settings.ShowDebugTooltip;
+
         BlurNoneRadio.IsChecked = _settings.Blur == BlurMode.None;
         BlurBlurRadio.IsChecked = _settings.Blur == BlurMode.Blur;
         BlurAcrylicRadio.IsChecked = _settings.Blur == BlurMode.Acrylic;
@@ -141,12 +143,17 @@ public partial class SettingsWindow : Window
         _preview();
     }
 
+    /// <summary>
+    /// 几个复选框共用的事件。这里**一次性把所有复选框都同步一遍**（而不是只读触发的那一个）：
+    /// 反正是幂等的，还省得每加一个复选框就多写一个事件方法。
+    /// </summary>
     private void OnOptionChanged(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
 
         _settings.ShowCardBorder = BorderCheck.IsChecked == true;
         _settings.TextOutline = OutlineCheck.IsChecked == true;
+        _settings.ShowDebugTooltip = DebugTipCheck.IsChecked == true;
         _preview();
     }
 

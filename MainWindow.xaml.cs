@@ -25,6 +25,12 @@ public partial class MainWindow : Window
     private AppMenu? _appMenu;
     private SettingsWindow? _settingsWindow;
 
+    /// <summary>
+    /// 最近一次算出来的悬停提示内容。**每次都算，但只有在设置里打开开关时才真的贴上去** ——
+    /// 这样打开开关的瞬间就有内容，不用干等下一次刷新。
+    /// </summary>
+    private string? _lastTip;
+
     /// <summary>全局快捷键（目前只有"单独按一下 Ctrl"这一条）。</summary>
     private HotkeyManager? _hotkeys;
 
@@ -553,6 +559,7 @@ public partial class MainWindow : Window
     private void OnAppearancePreview()
     {
         ApplyAppearance();
+        UpdateTooltip();        // 「诊断」里的悬停开关可能刚被改过，一起刷新
         _settings.Save();
     }
 
@@ -674,8 +681,9 @@ public partial class MainWindow : Window
                 //   ② 该窗口不通过 IMM32 暴露状态 —— 读不到就别瞎报
                 // 共同做法：保持上一次显示。宁可显示旧信息，也不给确定但错误的答案。
                 // （_lastMode 也保持不变，这样切主题时贴的还是原来那个颜色）
-                Root.ToolTip = tip + Environment.NewLine +
-                               $"⚠ {s.RuleUsed} → 保持上一次显示";
+                _lastTip = tip + Environment.NewLine +
+                           $"⚠ {s.RuleUsed} → 保持上一次显示";
+                UpdateTooltip();
                 return;
 
             default:
@@ -685,8 +693,19 @@ public partial class MainWindow : Window
                 break;
         }
 
-        // 鼠标悬停时显示原始数据 + 计数，出问题不用靠猜
-        Root.ToolTip = tip;
+        _lastTip = tip;
+        UpdateTooltip();
+    }
+
+    /// <summary>
+    /// 把悬停提示贴到窗口上 —— 开关关着时则清掉它。
+    ///
+    /// 这个提示是**排查问题**用的。默认关闭：正常使用时鼠标扫过方框就弹出一大段
+    /// 原始数据反而碍事。开关在设置窗口的「诊断」那一节里。
+    /// </summary>
+    private void UpdateTooltip()
+    {
+        Root.ToolTip = _settings.ShowDebugTooltip ? _lastTip : null;
     }
 
     private static string DescribeMode(ImeMode mode) => mode switch
