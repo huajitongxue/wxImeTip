@@ -27,9 +27,9 @@ jobs:
       contents: write            # 创建 Release、上传附件需要
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -87,7 +87,7 @@ jobs:
           ls -l release
 
       # 手动触发时也能把产物下载下来看一眼（保留 7 天后自动清理）
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ImeTip-build
           path: release/*
