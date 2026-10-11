@@ -1,0 +1,135 @@
+name: 构建并发布
+
+# 推送 v* 标签时自动构建并发布 Release。
+# 也可以在 Actions 页面手动触发一次（手动触发**只构建、不发 Release**），
+# 用来确认"这个 workflow 还能跑通"而不污染 Release 列表。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# 默认只读；需要往 Release 写东西的 job 在下面单独提权
+permissions:
+  contents: read
+
+# 同一个标签不并发构建，避免两个 run 同时往同一个 Release 传附件
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建（Windows x64）
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write            # 创建 Release、上传附件需要
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # 版本号取自标签（v1.5 → 1.5）；手动触发时给个占位值
+      - name: 计算版本号
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="0.0.0-dev"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "本次版本号：$v"
+
+      # ── 版本一：框架依赖版（约 300 KB，对方需装 .NET 10 桌面运行时）──
+      - name: 编译「框架依赖版」
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish ImeTip.csproj -c Release -r win-x64 --self-contained false \
+            -p:Version='${{ steps.ver.outputs.version }}' \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -o out/framework -v minimal
+
+      # ── 版本二：免安装版（约 75 MB，双击即用，什么都不用装）──
+      - name: 编译「免安装版」
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish ImeTip.csproj -c Release -r win-x64 --self-contained true \
+            -p:Version='${{ steps.ver.outputs.version }}' \
+            -p:PublishSingleFile=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -o out/portable -v minimal
+
+      # ⚠️ 交付文件名必须是**固定名**（不带版本号）。
+      #    理由见《开发笔记.md》：README 给的下载地址是
+      #    releases/latest/download/<文件名>，文件名写死了 ——
+      #    一旦带版本号，发下一版时之前分享出去的所有链接立刻 404。
+      - name: 组装交付文件
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in out/framework/ImeTip.exe out/portable/ImeTip.exe; do
+            [ -f "$f" ] || { echo "::error::没有生成 $f"; exit 1; }
+          done
+          mkdir -p release
+          cp out/framework/ImeTip.exe release/ImeTip.exe
+          cp out/portable/ImeTip.exe  release/ImeTip-portable.exe
+          ls -l release
+
+      # 手动触发时也能把产物下载下来看一眼（保留 7 天后自动清理）
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImeTip-build
+          path: release/*
+          retention-days: 7
+          if-no-files-found: error
+
+      # ── 发布（只在推标签时执行；手动触发会跳过这一步）──
+      - name: 创建或更新 Release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+
+          # Release 说明：仓库里有 docs/releases/<标签>.md 就用它，
+          # 没有就让 GitHub 按提交记录自动生成。
+          notes=()
+          if [ -f "docs/releases/${TAG}.md" ]; then
+            notes=(--notes-file "docs/releases/${TAG}.md")
+            echo "使用 docs/releases/${TAG}.md 作为发布说明"
+          else
+            notes=(--generate-notes)
+            echo "没有 docs/releases/${TAG}.md，改用自动生成的说明"
+          fi
+
+          if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+            # 同一个标签重跑时用 --clobber 覆盖同名附件，保证附件就是本次构建的
+            echo "Release $TAG 已存在，覆盖上传附件"
+            gh release upload "$TAG" release/* --repo "$repo" --clobber
+          else
+            # ⚠️ 先建 Release（不带附件），隔几秒再单独上传。
+            #    一步做完会撞上 uploads.github.com 的瞬时 404（踩过）。
+            gh release create "$TAG" \
+              --repo "$repo" \
+              --verify-tag \
+              --title "ImeTip $TAG — Windows 10/11 · x64" \
+              "${notes[@]}"
+            sleep 5
+            gh release upload "$TAG" release/* --repo "$repo"
+          fi
+
+          gh release view "$TAG" --repo "$repo" --json tagName,isDraft,url,assets
